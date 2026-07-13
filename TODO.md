@@ -3,14 +3,18 @@
 The code build is complete. What's left needs **your accounts, keys, or compute** —
 it can't be finished from the repo alone. Roughly in priority order.
 
-## 1. Deploy the backend (Render) — ~10 min
+## 1. Deploy the backend (Fly.io) — ~10 min
 The frontend is live at https://autonomous-swe-agent.vercel.app but runs in
-**replay-only** mode until a backend exists. Everything is ready:
-- [ ] Render → **New → Blueprint** → point at this repo (`render.yaml` is at the root).
-- [ ] After it's live, copy the service URL (e.g. `https://swe-agent-api.onrender.com`).
-- [ ] Set that URL as `PUBLIC_BASE_URL` in the Render service env.
-- [ ] Note: `render.yaml` installs `requirements-serve.txt` (light, no PyTorch). Live
-      runs stay off on Render — that's intentional (no Docker sandbox there).
+**replay-only** mode until a backend exists. Config is ready (`fly.toml` +
+`Dockerfile.serve`, light image, no PyTorch; scales to zero when idle):
+- [ ] Install flyctl and `fly auth login`.
+- [ ] `fly launch --no-deploy --copy-config` (creates the app; keep the existing `fly.toml`).
+- [ ] `fly deploy`.
+- [ ] Copy the app URL (e.g. `https://swe-agent-api.fly.dev`) and
+      `fly secrets set PUBLIC_BASE_URL=https://<your-app>.fly.dev`.
+- [ ] Live runs stay off here — intentional (no Docker sandbox on the serving host).
+- _Free-tier alternative if Fly billing is a blocker: Koyeb (free web service) or a
+  Hugging Face Docker Space — both run `Dockerfile.serve` as-is._
 
 ## 2. Wire the frontend to the backend — ~2 min
 - [ ] Vercel → project → Settings → Environment Variables → add
