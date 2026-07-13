@@ -4,13 +4,13 @@ Pydantic request/response schemas for the FastAPI endpoints.
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
 
-class Approach(str, Enum):
+class Approach(StrEnum):
     AGENT = "agent"
     AGENTLESS = "agentless"
 
@@ -70,7 +70,7 @@ class TaskRequest(BaseModel):
             raise ValueError("Provide either issue_url, or both issue_text and repo_url.")
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"

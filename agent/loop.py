@@ -26,7 +26,7 @@ import os
 import time
 from collections.abc import Generator
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from agent.context import compress_messages, get_budget_status, should_compress
@@ -48,7 +48,7 @@ MAX_TURNS = int(os.getenv("AGENT_MAX_TURNS", "50"))
 # ── Event types ────────────────────────────────────────────────────────────────
 
 
-class EventType(str, Enum):
+class EventType(StrEnum):
     THOUGHT = "thought"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
