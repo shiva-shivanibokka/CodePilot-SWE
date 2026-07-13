@@ -90,6 +90,38 @@ async def providers():
     return {"providers": providers_payload(), "live_runs_enabled": ENABLE_LIVE_RUNS}
 
 
+@app.get("/benchmark", tags=["System"])
+async def benchmark():
+    """Latest agent + agentless eval summaries, if any run has been recorded.
+    Reads eval/results/*_summary.json — numbers are never fabricated; the
+    frontend shows a 'not yet run' state when this is empty."""
+    from pathlib import Path
+
+    results_dir = Path(__file__).parent.parent / "eval" / "results"
+    fields = (
+        "approach",
+        "model",
+        "resolve_rate",
+        "resolved_count",
+        "total_instances",
+        "avg_cost_usd",
+        "total_cost_usd",
+        "avg_turns",
+    )
+    summaries = []
+    if results_dir.exists():
+        for approach in ("agent", "agentless"):
+            files = sorted(results_dir.glob(f"{approach}_*_summary.json"), reverse=True)
+            if not files:
+                continue
+            try:
+                data = json.loads(files[0].read_text())
+                summaries.append({k: data[k] for k in fields})
+            except (json.JSONDecodeError, KeyError, OSError):
+                continue
+    return {"summaries": summaries}
+
+
 @app.get("/metrics/summary", tags=["System"])
 async def metrics_summary():
     """Current resolve rates and cost totals."""

@@ -1,0 +1,21 @@
+# Serving-only dependencies for the hosted API (Render/Fly).
+# Live agent runs need a Docker sandbox and the search/eval stack — those extras
+# (numpy, sentence-transformers, docker, swebench) are intentionally excluded so
+# the hosted backend stays light. Install the full set with `pip install -e ".[dev]"`
+# locally to run the agent and the benchmark.
+litellm>=1.44.0
+PyGithub>=2.3.0
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+websockets>=12.0
+pydantic>=2.7.0
+opentelemetry-api>=1.24.0
+opentelemetry-sdk>=1.24.0
+opentelemetry-exporter-otlp-proto-grpc>=1.24.0
+prometheus-client>=0.20.0
+python-dotenv>=1.0.0
+httpx>=0.27.0
+tenacity>=8.3.0
+rich>=13.7.0
+tiktoken>=0.7.0
+unidiff>=0.7.5

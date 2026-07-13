@@ -183,6 +183,20 @@ talks to this API. Live agent runs need the Docker sandbox, so they run locally
 
 ---
 
+## Deployment
+
+The frontend and backend deploy separately. Live agent runs stay local (they need
+a Docker sandbox); the hosted site is a BYOK console that replays a recorded run.
+
+| Piece | Where | How |
+|---|---|---|
+| **Frontend** (`frontend/`) | Vercel | Git-connected. Root directory `frontend`. Set `NEXT_PUBLIC_API_BASE` to the backend URL (or leave blank for replay-only). |
+| **Backend** (serving API) | Render | `render.yaml` blueprint — installs `requirements-serve.txt` (light, no PyTorch), runs `uvicorn api.main:app`. Live runs off. |
+| **Full stack** (live runs, eval, tracing) | Local | `docker-compose up` — API + Jaeger + Prometheus, `ENABLE_LIVE_RUNS=true`. |
+
+After the backend is up, set `NEXT_PUBLIC_API_BASE` on Vercel and `PUBLIC_BASE_URL`
++ `FRONTEND_ORIGIN` on Render so the browser gets a working `wss://` URL and CORS passes.
+
 ## What's Production-Grade Here
 
 | Feature | Why It Matters |
