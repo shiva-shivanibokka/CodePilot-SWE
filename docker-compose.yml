@@ -1,0 +1,58 @@
+version: "3.9"
+
+services:
+  # ── FastAPI backend ──────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      # No LLM key here — the agent is BYOK (keys arrive per request).
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      # Live runs need Docker; enabled here because compose mounts the socket.
+      - ENABLE_LIVE_RUNS=true
+      - FRONTEND_ORIGIN=${FRONTEND_ORIGIN:-*}
+      - AGENT_MAX_TURNS=${AGENT_MAX_TURNS:-50}
+      - AGENT_CONTEXT_BUDGET=${AGENT_CONTEXT_BUDGET:-150000}
+      - SANDBOX_MEMORY_LIMIT=${SANDBOX_MEMORY_LIMIT:-2g}
+      - SANDBOX_CPU_LIMIT=${SANDBOX_CPU_LIMIT:-2.0}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - PROMETHEUS_PORT=9090
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+    volumes:
+      # Mount Docker socket for Docker-in-Docker sandbox spawning
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - jaeger
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Jaeger (distributed tracing) ─────────────────────────────────────────────
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC endpoint
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    restart: unless-stopped
+
+  # ── Prometheus (metrics) ───────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    restart: unless-stopped
+
+volumes:
+  eval_results:
+    driver: local

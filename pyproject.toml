@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autonomous-swe-agent"
+version = "0.1.0"
+description = "Production SWE agent benchmarked on SWE-bench-lite with agentless baseline comparison"
+requires-python = ">=3.11"
+dependencies = [
+    # LLM — one interface for Anthropic / OpenAI / Google / Groq (BYOK)
+    "litellm>=1.44.0",
+    # GitHub
+    "PyGithub>=2.3.0",
+    # Search
+    "rank-bm25>=0.2.2",
+    "sentence-transformers>=3.0.0",
+    "numpy>=1.26.0",
+    # SWE-bench
+    "swebench>=2.1.0",
+    # API / streaming
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+    "websockets>=12.0",
+    "pydantic>=2.7.0",
+    # Docker SDK
+    "docker>=7.1.0",
+    # Observability
+    "opentelemetry-api>=1.24.0",
+    "opentelemetry-sdk>=1.24.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.24.0",
+    "prometheus-client>=0.20.0",
+    # Utilities
+    "python-dotenv>=1.0.0",
+    "httpx>=0.27.0",
+    "tenacity>=8.3.0",
+    "rich>=13.7.0",
+    "tiktoken>=0.7.0",
+    "unidiff>=0.7.5",
+    "gitpython>=3.1.43",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-timeout>=2.3.0",
+    "ruff>=0.4.0",
+    "mypy>=1.10.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# load_dotenv() must run before importing modules that read env at import time.
+"api/main.py" = ["E402"]
+"eval/run_eval.py" = ["E402"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+timeout = 120
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agent*", "agentless*", "sandbox*", "github_integration*", "eval*", "observability*", "api*"]

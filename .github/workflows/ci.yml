@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # ── Job 1: Lint ─────────────────────────────────────────────────────────────
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run ruff
+        run: ruff check . --select E,F,I,UP --ignore E501
+
+  # ── Job 2: Unit Tests ──────────────────────────────────────────────────────
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+
+      - name: Run unit tests (fully mocked — no Docker, no LLM, no network)
+        run: pytest tests/ -v --timeout=60
+
+  # ── Job 3: Docker Build ────────────────────────────────────────────────────
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build main app image
+        run: docker build -t swe-agent:ci .
+
+      - name: Build sandbox image
+        run: |
+          docker build \
+            -f sandbox/Dockerfile.sandbox \
+            -t swe-agent-sandbox:latest \
+            sandbox/
+
+  # ── Job 4: Smoke Eval (5 instances, requires secrets) ─────────────────────
+  # Only runs on pushes to main with the API key set as a repo secret.
+  # This gives you a real "does the agent work?" gate on every merge.
+  smoke-eval:
+    name: Smoke Eval (5 SWE-bench instances)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [lint, unit-tests, docker-build]
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      EVAL_INSTANCE_LIMIT: "5"
+      EVAL_MAX_WORKERS: "2"
+      AGENT_MAX_TURNS: "20"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Build sandbox Docker image
+        run: |
+          docker build \
+            -f sandbox/Dockerfile.sandbox \
+            -t swe-agent-sandbox:latest \
+            sandbox/
+
+      - name: Run smoke eval (agent, 5 instances)
+        run: |
+          python -m eval.run_eval --approach agent --limit 5 --workers 2
+        continue-on-error: true  # Don't fail CI if eval performance drops
+
+      - name: Upload eval results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-eval-results
+          path: eval/results/
+          retention-days: 30

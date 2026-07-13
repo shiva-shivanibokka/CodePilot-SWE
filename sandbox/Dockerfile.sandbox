@@ -1,0 +1,57 @@
+# SWE-agent sandbox image
+# Mirrors the SWE-bench official task environment as closely as possible.
+# Every task gets a fresh container from this image — no state bleed between tasks.
+
+FROM python:3.11-slim
+
+# System packages needed for most open-source Python repos
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    wget \
+    build-essential \
+    libssl-dev \
+    libffi-dev \
+    libxml2-dev \
+    libxslt1-dev \
+    zlib1g-dev \
+    libbz2-dev \
+    libreadline-dev \
+    libsqlite3-dev \
+    liblzma-dev \
+    libncurses5-dev \
+    libncursesw5-dev \
+    tk-dev \
+    uuid-dev \
+    vim \
+    less \
+    jq \
+    patch \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pre-install common Python test and dev packages so task setup is faster
+RUN pip install --no-cache-dir \
+    pytest \
+    pytest-cov \
+    pytest-xdist \
+    coverage \
+    tox \
+    black \
+    flake8 \
+    ruff \
+    mypy \
+    isort \
+    setuptools \
+    wheel \
+    pip-tools \
+    build
+
+# Create a non-root user for safety (same as SWE-bench official harness)
+RUN useradd -ms /bin/bash sweagent
+RUN mkdir -p /repo && chown sweagent:sweagent /repo
+
+WORKDIR /repo
+USER sweagent
+
+# Default: just run bash. The agent will exec commands into this container.
+CMD ["/bin/bash"]
