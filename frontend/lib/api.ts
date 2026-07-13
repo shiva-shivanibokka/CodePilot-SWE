@@ -1,13 +1,12 @@
 import type { AgentEvent, Approach, BenchmarkSummary, ProvidersResponse } from "./types";
 
-/** Backend base URL. Empty string = no backend (replay-only hosted demo). */
-export const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/$/, "");
-
-export const hasBackend = () => API_BASE.length > 0;
+// Where the API lives. Default: the Vercel app's own /api routes (providers +
+// benchmark, hosted for free). Point NEXT_PUBLIC_API_BASE at the local Python
+// backend (e.g. http://localhost:8000) to enable live agent runs.
+export const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || "/api").replace(/\/$/, "");
 
 /** The provider/model registry + whether this instance permits live runs. */
 export async function fetchProviders(): Promise<ProvidersResponse | null> {
-  if (!hasBackend()) return null;
   try {
     const res = await fetch(`${API_BASE}/providers`, { cache: "no-store" });
     if (!res.ok) return null;
@@ -19,7 +18,6 @@ export async function fetchProviders(): Promise<ProvidersResponse | null> {
 
 /** Latest benchmark summaries, if the backend serves them. Never fabricated. */
 export async function fetchBenchmark(): Promise<BenchmarkSummary[] | null> {
-  if (!hasBackend()) return null;
   try {
     const res = await fetch(`${API_BASE}/benchmark`, { cache: "no-store" });
     if (!res.ok) return null;

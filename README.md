@@ -190,12 +190,13 @@ a Docker sandbox); the hosted site is a BYOK console that replays a recorded run
 
 | Piece | Where | How |
 |---|---|---|
-| **Frontend** (`frontend/`) | Vercel | Git-connected. Root directory `frontend`. Set `NEXT_PUBLIC_API_BASE` to the backend URL (or leave blank for replay-only). |
-| **Backend** (serving API) | Fly.io | `fly.toml` + `Dockerfile.serve` (light, no PyTorch). `fly launch --copy-config` then `fly deploy`. Scales to zero; live runs off. |
-| **Full stack** (live runs, eval, tracing) | Local | `docker-compose up` — API + Jaeger + Prometheus, `ENABLE_LIVE_RUNS=true`. |
+| **Frontend + hosted API** (`frontend/`) | Vercel | Git-connected, root directory `frontend`. The read-only `/providers` and `/benchmark` endpoints are served by Next.js route handlers in the same app — no separate backend host needed or paid for. |
+| **Full backend** (live runs, eval, tracing) | Local | `docker-compose up` — API + Jaeger + Prometheus, `ENABLE_LIVE_RUNS=true`. Point the frontend at it with `NEXT_PUBLIC_API_BASE=http://localhost:8000`. |
+| **Full backend, hosted** (optional) | Any container host | `Dockerfile.serve` is a light serving image (no PyTorch). Deploy it anywhere that takes a Dockerfile if you want the Python API online. |
 
-After the backend is up, set `NEXT_PUBLIC_API_BASE` on Vercel and `PUBLIC_BASE_URL`
-+ `FRONTEND_ORIGIN` on Render so the browser gets a working `wss://` URL and CORS passes.
+The hosted demo is replay-only (live agent runs need a Docker sandbox, so they run
+locally). To show real benchmark numbers on the live site, run the eval and paste the
+two summary objects into `frontend/data/benchmark.json`.
 
 ## What's Production-Grade Here
 
