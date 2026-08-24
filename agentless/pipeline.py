@@ -3,9 +3,9 @@ Agentless pipeline — orchestrates the 3 phases end to end.
 
 Usage:
     from agentless.pipeline import run_agentless
-    from sandbox.docker_workspace import DockerWorkspace
+    from sandbox import create_workspace
 
-    with DockerWorkspace.create(repo_url, commit_sha) as ws:
+    with create_workspace(repo_url, commit_sha) as ws:
         result = run_agentless(ws, issue_text)
         print(f"Resolved: {result.resolved}, Cost: ${result.total_cost_usd:.4f}")
 """
@@ -20,13 +20,13 @@ from agentless.repair import repair
 from agentless.validate import AgentlessResult, validate
 from observability.metrics import metrics
 from observability.tracing import get_tracer
-from sandbox.docker_workspace import DockerWorkspace
+from sandbox.workspace import Workspace
 
 tracer = get_tracer(__name__)
 
 
 def run_agentless(
-    workspace: DockerWorkspace,
+    workspace: Workspace,
     issue_text: str,
     llm: LLMConfig,
     num_samples: int = 10,
@@ -41,7 +41,7 @@ def run_agentless(
     Phase 3: Validate — run tests on each candidate, select the best
 
     Args:
-        workspace:    Active DockerWorkspace.
+        workspace:    Active Workspace.
         issue_text:   Full GitHub issue text.
         llm:          Provider/model/api-key config (BYOK).
         num_samples:  Number of patch candidates to generate.

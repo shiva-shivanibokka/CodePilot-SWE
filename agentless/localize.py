@@ -17,13 +17,11 @@ Three-level localization:
 
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import dataclass
 
-from agent.llm import LLMConfig, complete
+from agent.llm import LLMConfig, complete, extract_json
 from observability.tracing import get_tracer
-from sandbox.docker_workspace import DockerWorkspace
+from sandbox.workspace import Workspace
 
 tracer = get_tracer(__name__)
 
@@ -40,7 +38,7 @@ class LocalizationResult:
     cost_usd: float = 0.0
 
 
-def build_repo_map(workspace: DockerWorkspace, max_files: int = 100) -> str:
+def build_repo_map(workspace: Workspace, max_files: int = 100) -> str:
     """
     Build a compact repo map: file tree + function/class signatures.
 
@@ -50,7 +48,7 @@ def build_repo_map(workspace: DockerWorkspace, max_files: int = 100) -> str:
     - File sizes (to help the LLM avoid reading huge files)
 
     Args:
-        workspace:  Active DockerWorkspace.
+        workspace:  Active Workspace.
         max_files:  Maximum number of files to include function signatures for.
 
     Returns:
@@ -96,7 +94,7 @@ def build_repo_map(workspace: DockerWorkspace, max_files: int = 100) -> str:
 
 
 def localize(
-    workspace: DockerWorkspace,
+    workspace: Workspace,
     issue_text: str,
     llm: LLMConfig,
 ) -> LocalizationResult:
@@ -104,7 +102,7 @@ def localize(
     Phase 1: Identify which files/functions need to change to fix the issue.
 
     Args:
-        workspace:  Active DockerWorkspace with the repo.
+        workspace:  Active Workspace with the repo.
         issue_text: The full issue title + body.
         llm:        Provider/model/api-key config (BYOK).
 
@@ -144,28 +142,19 @@ Respond with a JSON object in this exact format:
 
 Return ONLY the JSON object, no other text."""
 
-        resp = complete(llm, [{"role": "user", "content": prompt}], max_tokens=1024)
+        resp = complete(llm, [{"role": "user", "content": prompt}], max_tokens=2048)
 
         in_tok = resp.input_tokens
         out_tok = resp.output_tokens
         cost = resp.cost_usd
 
-        raw = resp.text.strip()
-
-        # Parse JSON — strip markdown fences if present
-        raw = re.sub(r"^```(?:json)?", "", raw, flags=re.MULTILINE).strip()
-        raw = re.sub(r"```$", "", raw, flags=re.MULTILINE).strip()
-
         try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError:
-            # Fallback: extract JSON block
-            match = re.search(r"\{.*\}", raw, re.DOTALL)
-            parsed = (
-                json.loads(match.group(0))
-                if match
-                else {"suspect_files": [], "suspect_locations": []}
-            )
+            parsed = extract_json(resp.text, expect=dict)
+        except ValueError:
+            # Localization failed: the pipeline still runs, on no suspects, and
+            # says so rather than pretending the model returned an empty list.
+            print("[agentless] localize: no JSON object in the model response")
+            parsed = {"suspect_files": [], "suspect_locations": []}
 
         # Convert relative paths to absolute
         suspect_files = [

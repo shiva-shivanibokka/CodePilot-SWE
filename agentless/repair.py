@@ -16,15 +16,13 @@ to select the best one, achieving 32% on SWE-bench Lite at $0.70/issue.
 
 from __future__ import annotations
 
-import json
 import os
-import re
 from dataclasses import dataclass
 
-from agent.llm import LLMConfig, complete
+from agent.llm import LLMConfig, complete, extract_json
 from agentless.localize import LocalizationResult
 from observability.tracing import get_tracer
-from sandbox.docker_workspace import DockerWorkspace
+from sandbox.workspace import Workspace
 
 tracer = get_tracer(__name__)
 
@@ -71,7 +69,7 @@ class RepairResult:
 
 
 def repair(
-    workspace: DockerWorkspace,
+    workspace: Workspace,
     issue_text: str,
     localization: LocalizationResult,
     llm: LLMConfig,
@@ -86,7 +84,7 @@ def repair(
     3. Return all candidates for validation in Phase 3
 
     Args:
-        workspace:      Active DockerWorkspace.
+        workspace:      Active Workspace.
         issue_text:     Full issue text.
         localization:   Output from Phase 1 (localize()).
         llm:            Provider/model/api-key config (BYOK).
@@ -96,7 +94,8 @@ def repair(
         RepairResult with all candidates.
     """
     with tracer.start_as_current_span("agentless.repair"):
-        candidates = []
+        candidates: list[PatchCandidate] = []
+        rejected: list[str] = []
         total_in_tok = 0
         total_out_tok = 0
         total_cost = 0.0
@@ -144,14 +143,18 @@ Here is the file that needs to be fixed:
 </file>
 {function_hint}
 
-Produce the COMPLETE fixed file content. Make the MINIMAL change needed.
-Do not add unnecessary changes, comments, or reformatting.
+Make the MINIMAL change needed. Do not reformat, do not add comments, do not
+fix anything the issue did not ask for.
 
 Respond with a JSON object:
 {{
-  "explanation": "one sentence explaining what you changed and why",
-  "fixed_content": "complete fixed file content as a string"
+  "explanation": "one sentence on what you changed and why",
+  "search": "the exact lines to replace, copied character for character from the file above, including indentation",
+  "replace": "what those lines should become"
 }}
+
+"search" must appear EXACTLY ONCE in the file. If the lines you want are not
+unique, include more surrounding lines until they are.
 
 Return ONLY the JSON object."""
 
@@ -163,40 +166,34 @@ Return ONLY the JSON object."""
                     llm,
                     [{"role": "user", "content": prompt}],
                     temperature=1.0 if sample_idx > 0 else 0.2,
-                    max_tokens=4096,
+                    max_tokens=2048,
                 )
 
-                in_tok = resp.input_tokens
-                out_tok = resp.output_tokens
-                cost = resp.cost_usd
-                total_in_tok += in_tok
-                total_out_tok += out_tok
-                total_cost += cost
+                total_in_tok += resp.input_tokens
+                total_out_tok += resp.output_tokens
+                total_cost += resp.cost_usd
 
-                raw = resp.text.strip()
-                raw = re.sub(r"^```(?:json)?", "", raw, flags=re.MULTILINE).strip()
-                raw = re.sub(r"```$", "", raw, flags=re.MULTILINE).strip()
-
-                try:
-                    parsed = json.loads(raw)
-                    fixed_content = parsed.get("fixed_content", "")
-                    explanation = parsed.get("explanation", "")
-
-                    if fixed_content and fixed_content != file_content:
-                        candidates.append(
-                            PatchCandidate(
-                                file_path=filepath,
-                                original_content=file_content,
-                                patched_content=fixed_content,
-                                explanation=explanation,
-                                sample_index=len(candidates),
-                                input_tokens=in_tok,
-                                output_tokens=out_tok,
-                                cost_usd=cost,
-                            )
-                        )
-                except (json.JSONDecodeError, KeyError):
+                patched, problem = apply_search_replace(file_content, resp)
+                if patched is None:
+                    rejected.append(problem)
                     continue
+
+                candidates.append(
+                    PatchCandidate(
+                        file_path=filepath,
+                        original_content=file_content,
+                        patched_content=patched,
+                        explanation=str(problem or ""),
+                        sample_index=len(candidates),
+                        input_tokens=resp.input_tokens,
+                        output_tokens=resp.output_tokens,
+                        cost_usd=resp.cost_usd,
+                    )
+                )
+
+        if rejected and not candidates:
+            # Zero candidates is a result the caller has to be able to explain.
+            print(f"[agentless] every sample was rejected: {rejected[:5]}")
 
         return RepairResult(
             candidates=candidates,
@@ -204,3 +201,39 @@ Return ONLY the JSON object."""
             total_output_tokens=total_out_tok,
             total_cost_usd=total_cost,
         )
+
+
+def apply_search_replace(file_content: str, resp) -> tuple[str | None, str]:
+    """
+    Turn one sampled search/replace pair into patched file content.
+
+    Returns (patched_content, explanation) on success and (None, reason) on
+    failure. Every rejection carries a reason: a phase that yields no patches
+    needs to be able to say whether the model was truncated, hallucinated the
+    lines, or matched in more than one place.
+    """
+    if resp.finish_reason == "length":
+        return None, "response hit the token cap before the JSON closed"
+
+    try:
+        parsed = extract_json(resp.text, expect=dict)
+    except ValueError:
+        return None, "no JSON object in the response"
+
+    search = parsed.get("search") or ""
+    replace = parsed.get("replace")
+    explanation = str(parsed.get("explanation") or "")
+
+    if not search or replace is None:
+        return None, "missing 'search' or 'replace'"
+
+    occurrences = file_content.count(search)
+    if occurrences == 0:
+        return None, "'search' does not appear in the file"
+    if occurrences > 1:
+        return None, f"'search' matches {occurrences} places, not one"
+
+    patched = file_content.replace(search, replace, 1)
+    if patched == file_content:
+        return None, "the patch changes nothing"
+    return patched, explanation

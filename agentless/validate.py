@@ -23,7 +23,7 @@ from dataclasses import dataclass
 
 from agentless.repair import PatchCandidate, RepairResult
 from observability.tracing import get_tracer
-from sandbox.docker_workspace import DockerWorkspace
+from sandbox.workspace import Workspace
 
 tracer = get_tracer(__name__)
 
@@ -54,31 +54,25 @@ class AgentlessResult:
     total_output_tokens: int
 
 
-def _parse_pytest_output(output: str) -> tuple[int, int, int]:
-    """Parse pytest output to extract pass/fail/error counts."""
-    # Look for the summary line: "5 passed, 2 failed, 1 error"
-    match = re.search(
-        r"(\d+) passed(?:,\s*(\d+) failed)?(?:,\s*(\d+) error)?",
-        output,
-    )
-    if match:
-        passed = int(match.group(1) or 0)
-        failed = int(match.group(2) or 0)
-        errors = int(match.group(3) or 0)
-        return passed, failed, errors
+def _count(word: str, output: str) -> int:
+    """Total for one pytest outcome word, summed over every summary line present."""
+    return sum(int(n) for n in re.findall(rf"(\d+) {word}s?\b", output))
 
-    # Alternative: just failed
-    fail_match = re.search(r"(\d+) failed", output)
-    pass_match = re.search(r"(\d+) passed", output)
-    return (
-        int(pass_match.group(1)) if pass_match else 0,
-        int(fail_match.group(1)) if fail_match else 0,
-        0,
-    )
+
+def _parse_pytest_output(output: str) -> tuple[int, int, int]:
+    """
+    Extract pass/fail/error counts from pytest's summary line.
+
+    Each outcome is matched independently. Pytest orders its summary worst-first
+    ("2 failed, 5 passed"), so a single regex expecting "passed" ahead of
+    "failed" matches the passes, never sees the failures, and reports a run with
+    failing tests as clean — which here promotes a broken patch to the winner.
+    """
+    return _count("passed", output), _count("failed", output), _count("error", output)
 
 
 def validate_candidate(
-    workspace: DockerWorkspace,
+    workspace: Workspace,
     candidate: PatchCandidate,
     test_command: str = "pytest tests/ -x -q --tb=short --timeout=60 2>&1",
 ) -> ValidationResult:
@@ -86,7 +80,7 @@ def validate_candidate(
     Apply a patch to the workspace and run the test suite.
 
     Args:
-        workspace:      DockerWorkspace with the original repo.
+        workspace:      Workspace with the original repo.
         candidate:      The patch to test.
         test_command:   The pytest command to run.
 
@@ -123,7 +117,7 @@ def validate_candidate(
 
 
 def validate(
-    workspace: DockerWorkspace,
+    workspace: Workspace,
     repair_result: RepairResult,
     localize_cost_usd: float = 0.0,
     localize_input_tokens: int = 0,
@@ -134,7 +128,7 @@ def validate(
     Phase 3: Validate all candidates and select the best patch.
 
     Args:
-        workspace:              DockerWorkspace.
+        workspace:              Workspace.
         repair_result:          Output from repair().
         localize_cost_usd:      Cost from localization phase (for totals).
         localize_input_tokens:  Tokens from localization phase.
