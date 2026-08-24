@@ -36,16 +36,22 @@ export default function AppShell() {
     });
   }, []);
 
+  // Re-reads BOTH halves of the hash, and re-runs when the index arrives.
+  // Handling only the section here meant a link to a specific run worked on a
+  // cold load and silently ignored the run on every hashchange after it — so
+  // browser back, forward, and one deep link followed by another all left the
+  // wrong recording on screen under the right URL.
   useEffect(() => {
     const apply = () => {
-      const [section] = readHash();
+      const [section, runId] = readHash();
       if (SECTIONS.some((s) => s.id === section)) setActive(section);
+      if (runId) setSelected((current) => runs.find((r) => r.id === runId) ?? current);
     };
     apply();
     hydrated.current = true;
     window.addEventListener("hashchange", apply);
     return () => window.removeEventListener("hashchange", apply);
-  }, []);
+  }, [runs]);
 
   const writeHash = useCallback((section: string, runId?: string | null) => {
     if (!hydrated.current) return;
