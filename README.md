@@ -31,6 +31,11 @@ and compared with every token, turn and dollar accounted for.
 > **You can run it live in two commands** — see
 > [Run it yourself](#run-it-yourself). No Docker required.
 
+The site has five sections: **What this is** (the project and, more usefully,
+what the recordings do *not* support), **Watch it work** (pick a run and watch
+it, with its patch and grading beside the log), **Benchmark**, **Architecture**,
+and **Run it yourself**.
+
 ---
 
 ## What the recorded runs show
@@ -78,8 +83,6 @@ That failure is on the site, with its diff and its test output, and it was not
 re-run to get a better one. An agent that solves easy issues and visibly breaks
 on hard ones is a more useful artifact than four staged successes: "where does
 it break" is the first thing anyone reading this will want to know.
-
-## What it does
 
 ## What it does
 
@@ -263,8 +266,20 @@ The frontend had its own version of the same problem: the console shipped a
 hand-written `SAMPLE_RUN` with invented reasoning, invented token counts and an
 invented `4 passed in 3.21s`, streaming into the UI looking exactly like a real
 run. It is now a real run or nothing — `frontend/scripts/validate-run.mjs` fails
-the build if the recording is missing, malformed, or contains anything
+the build if a recording is missing, malformed, oversized, or contains anything
 key-shaped.
+
+And its own set of bugs, most of which only appear in a browser rather than in a
+build:
+
+| Bug | Why it mattered |
+|---|---|
+| The done event reported `len(diff.splitlines())` as "lines changed" | Headers, hunk markers and context all counted: a one-line edit read as **13 lines changed** while the patch view beside it correctly showed one |
+| `.meta` styled both the rail's key/value list and the diff's header rows | Equal specificity, so every diff header inherited `flex-direction: column` and stood on end at triple height |
+| `cache: "force-cache"` on the recordings | A returning visitor kept the old file **indefinitely** — the site served superseded numbers with nothing to signal it |
+| The `hashchange` handler read only the section, never the run | `#run/<id>` worked on a cold load and was ignored on back, forward, and every link followed after the first |
+| `.hero` and `.panel` also carry `.wrap`; their `padding` shorthand won | The page gutters silently resolved to zero, so the tab strip and the content sat on different left edges |
+| Timers chained per event | Chrome throttles background tabs, so switching away froze playback mid-run; scheduling against a wall clock flushes the backlog instead |
 
 ## Benchmark Results
 
@@ -301,7 +316,16 @@ Autonomous-SWE-Agent/
 ├── github_integration/    # issue_fetcher.py + pr_creator.py
 ├── observability/         # tracing.py (OTel) + metrics.py (Prometheus)
 ├── api/                   # main.py (FastAPI + WS) + schemas.py (Pydantic)
-├── frontend/              # Next.js app on Vercel (+ /api route handlers)
+├── frontend/
+│   ├── components/
+│   │   ├── AppShell.tsx   # Rail + section routing, deep links to a run
+│   │   ├── Rail.tsx       # Sections, loaded-run identity, what is measured
+│   │   ├── RunDeck.tsx    # The split: facts and patch left, log right
+│   │   ├── RunPicker.tsx  # Choose a recording, by difficulty and outcome
+│   │   ├── About.tsx      # What this is, and what it does not show
+│   │   └── InfoTip.tsx    # The "?" beside a figure
+│   ├── public/demo/       # The recordings: index.json + one file per run
+│   └── scripts/           # validate-run.mjs — fails the build on a bad recording
 └── tests/                 # 85 unit tests — mocked, no Docker/LLM/network
 ```
 
