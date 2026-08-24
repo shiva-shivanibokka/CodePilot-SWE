@@ -18,7 +18,7 @@ export function Hero() {
         the Agentless paper.
       </p>
       <div className="hero-meta">
-        <span><span className="tick">✓</span> Docker-isolated per task</span>
+        <span><span className="tick">✓</span> Docker-isolated per task — or no Docker at all</span>
         <span><span className="tick">✓</span> Bring your own key — Anthropic · OpenAI · Google · Groq</span>
         <span><span className="tick">✓</span> OpenTelemetry + Prometheus</span>
       </div>

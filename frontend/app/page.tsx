@@ -32,10 +32,15 @@ export default function Page() {
 
       <footer className="footer">
         <div className="wrap footer-inner">
-          <span>Autonomous SWE Agent — agentic vs. agentless on SWE-bench-lite.</span>
+          <span className="byline">
+            Built by <strong>Shivani Bokka</strong>
+          </span>
           <span>
-            <a href={REPO} target="_blank" rel="noreferrer">GitHub</a> · Bring your own key ·
-            No key stored
+            <a href={REPO} target="_blank" rel="noreferrer">
+              Source on GitHub
+            </a>{" "}
+            · Bring your own key · No key stored · The run above is a recording, not a live
+            service
           </span>
         </div>
       </footer>

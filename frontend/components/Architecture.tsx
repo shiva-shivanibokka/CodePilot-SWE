@@ -13,7 +13,7 @@ export function Architecture() {
             </li>
             <li>
               <strong>Reproduce</strong>
-              <p>The agent writes a script that triggers the bug and confirms it in a sandbox.</p>
+              <p>The agent writes a script that triggers the bug and confirms it in an isolated workspace.</p>
             </li>
             <li>
               <strong>Edit with str_replace</strong>
@@ -33,12 +33,12 @@ export function Architecture() {
               <p>A repo map (file tree + signatures) lets the model name suspect files and functions — no tools.</p>
             </li>
             <li>
-              <strong>Repair ×10</strong>
-              <p>Ten candidate patches are sampled at temperature, giving diverse fixes to choose from.</p>
+              <strong>Repair ×N</strong>
+              <p>Candidates are sampled at temperature as search/replace blocks — a few dozen tokens each, so a large file cannot truncate the patch away.</p>
             </li>
             <li>
               <strong>Validate</strong>
-              <p>Each patch is applied and tested in the sandbox; the winner is chosen by pass rate, not by the model.</p>
+              <p>Each patch is applied and tested in the workspace; the winner is chosen by pass rate, not by the model.</p>
             </li>
             <li>
               <strong>Submit best</strong>
