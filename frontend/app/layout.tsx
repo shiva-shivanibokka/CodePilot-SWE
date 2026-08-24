@@ -1,12 +1,18 @@
 import type { Metadata } from "next";
-import { Inter_Tight, JetBrains_Mono } from "next/font/google";
+import { Bricolage_Grotesque, Inter_Tight, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-// Inter Tight for display and body — the tighter widths hold a large headline
-// without the quirk of a geometric face; JetBrains Mono for every figure, path
-// and log line, which is most of this page.
-// Both are variable fonts: omitting `weight` loads the full axis, so the
-// stylesheet can use in-between weights like 650 for display type.
+// Bricolage Grotesque carries the display type — headline, section headings and
+// the tabs. It has an optical-size axis and enough character to make the page
+// look drawn rather than assembled, which a neutral UI grotesque cannot do on
+// its own. Inter Tight sets running text underneath it, and JetBrains Mono
+// takes every figure, path and log line, which is most of this page.
+// All three are variable: omitting `weight` loads the full axis, so the
+// stylesheet can use in-between weights like 650.
+const bricolage = Bricolage_Grotesque({
+  subsets: ["latin"],
+  variable: "--font-bricolage",
+});
 const interTight = Inter_Tight({
   subsets: ["latin"],
   variable: "--font-inter-tight",
@@ -24,7 +30,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${interTight.variable} ${jetbrains.variable}`}>
+    <html lang="en" className={`${bricolage.variable} ${interTight.variable} ${jetbrains.variable}`}>
       <body>{children}</body>
     </html>
   );
