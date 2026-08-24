@@ -338,12 +338,13 @@ function Verdict({ run }: { run: RecordedRun }) {
           ? `The patch made the ${g.failToPassCount ?? "failing"} target test${g.failToPassCount === 1 ? "" : "s"} pass without breaking the ${g.passToPassCount ?? "other"} that already passed.`
           : "The patch did not satisfy the benchmark's own tests. Recorded as it happened — this is where the agent's limit is, and hiding it would make every other number here worth less."}
       </p>
-      {!g.resolved && gold ? (
+      {wrote != null && gold != null ? (
         <p>
-          The agent changed <strong>{wrote}</strong> lines; the fix the maintainers actually
-          shipped changed <strong>{gold}</strong>. That gap is usually the whole story on a hard
-          issue: the agent solves the problem as the issue describes it, while the accepted fix
-          solves a larger one the issue never mentions.
+          The agent changed <strong>{wrote}</strong> line{wrote === 1 ? "" : "s"}; the fix the
+          maintainers actually shipped changed <strong>{gold}</strong>.{" "}
+          {gold >= wrote * 3
+            ? "That gap is usually the whole story on a hard issue: the agent solves the problem as the issue describes it, while the accepted fix solves a larger one the issue never mentions."
+            : "Same size as the real fix — the agent found the same edit a maintainer did, not a sprawling rewrite that happens to pass."}
         </p>
       ) : null}
       {g.output && <pre className="testout">{g.output.trim()}</pre>}
@@ -376,7 +377,9 @@ function Patch({ run }: { run: RecordedRun }) {
         <b>
           +{added} −{removed}
         </b>
-        {run.task.goldPatchLines ? <span>the real fix was {run.task.goldPatchLines} lines</span> : null}
+        {run.task.goldPatchLines ? (
+          <span>the accepted fix changed {run.task.goldPatchLines} lines</span>
+        ) : null}
       </div>
       <div className="patch">
         <div className="patch-head">

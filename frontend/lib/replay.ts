@@ -45,7 +45,9 @@ export interface RunTask {
   repoUrl: string;
   baseCommit: string;
   text: string;
+  /** Added plus removed lines, so agent and gold are compared like for like. */
   goldPatchLines?: number;
+  agentPatchLines?: number;
 }
 
 export interface Grading {

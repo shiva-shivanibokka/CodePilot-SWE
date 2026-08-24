@@ -49,6 +49,12 @@ here. Instances outside Verified are shown unrated rather than guessed at.
 
 **3 of 4 resolved. $0.41 for the set.** Model: `claude-sonnet-5` throughout.
 
+On all three it solved, the agent's patch is **exactly the same size** as the one
+the maintainers shipped — 10 changed lines against 10 on flask, 2 against 2 on
+both sympy instances. It found the edit a maintainer found, not a sprawling
+rewrite that happens to pass. On the one it failed, it changed 4 lines where 49
+were needed.
+
 ### The two most interesting ones
 
 **`flask-4992` — where following the issue would have failed.** The issue
@@ -61,9 +67,10 @@ confirm the remaining failures were pre-existing.
 
 **`sympy-18199` — where the agent's limit actually is.** The issue says
 `nthroot_mod` misses the root `x = 0` when `a % p == 0`. The agent implemented
-exactly that, in 16 lines, and it is a correct reading of the issue. The fix the
-maintainers shipped is 76 lines: it also adds `_nthroot_mod_composite`, support
-for **composite moduli** that the issue never mentions. The graded test
+exactly that, in **4 changed lines**, and it is a correct reading of the issue.
+The fix the maintainers shipped changed **49**: it also adds
+`_nthroot_mod_composite`, support for **composite moduli** that the issue never
+mentions. The graded test
 exercises `solveset` over `Mod(x**3, 8)`, and 8 is composite — so the agent's
 patch cannot pass it.
 
