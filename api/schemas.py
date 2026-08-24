@@ -5,9 +5,8 @@ Pydantic request/response schemas for the FastAPI endpoints.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class Approach(StrEnum):
@@ -65,9 +64,11 @@ class TaskRequest(BaseModel):
             raise ValueError(f"Unknown provider {v!r}. Options: {sorted(PROVIDERS)}")
         return v
 
-    def model_post_init(self, __context: Any) -> None:
+    @model_validator(mode="after")
+    def _has_a_target(self) -> TaskRequest:
         if not self.issue_url and not (self.issue_text and self.repo_url):
             raise ValueError("Provide either issue_url, or both issue_text and repo_url.")
+        return self
 
 
 class TaskStatus(StrEnum):

@@ -205,6 +205,13 @@ def start_metrics_server(port: int | None = None) -> None:
     if _server_started:
         return
     port = port or int(os.getenv("PROMETHEUS_PORT", "9090"))
-    start_http_server(port)
+    try:
+        start_http_server(port)
+    except OSError as exc:
+        # A busy port is not worth killing the process over: running the eval
+        # while the API is already up would otherwise crash the eval on startup,
+        # long before it reaches anything that matters.
+        print(f"[metrics] port {port} unavailable ({exc}) - metrics disabled for this process")
+        return
     _server_started = True
     print(f"[metrics] Prometheus metrics available at http://localhost:{port}/metrics")

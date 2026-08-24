@@ -34,8 +34,12 @@ class Provider:
     models: tuple[Model, ...]
 
 
-# Curated, tool-capable defaults per provider (current as of 2026-07).
-# The dropdown is a convenience — BYOK still accepts any model the key supports.
+# Curated, tool-capable defaults per provider. The first model listed is the
+# default for eval and recording runs, so it is the one kept verified.
+#
+# Model ids drift faster than any repo can track. The dropdown is a convenience
+# only: BYOK passes whatever id you give it straight through to the provider, so
+# a stale entry here costs a dropdown row, never the ability to run.
 PROVIDERS: dict[str, Provider] = {
     "anthropic": Provider(
         key="anthropic",
@@ -44,9 +48,9 @@ PROVIDERS: dict[str, Provider] = {
         key_env="ANTHROPIC_API_KEY",
         key_url="https://console.anthropic.com/settings/keys",
         models=(
-            Model("claude-opus-4-8", "Claude Opus 4.8"),
             Model("claude-sonnet-5", "Claude Sonnet 5"),
-            Model("claude-haiku-4-5", "Claude Haiku 4.5"),
+            Model("claude-opus-5", "Claude Opus 5"),
+            Model("claude-haiku-4-5", "Claude Haiku 4.5 (fast/cheap)"),
         ),
     ),
     "openai": Provider(

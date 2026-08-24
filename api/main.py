@@ -15,6 +15,7 @@ The final DONE event contains the full TaskResult.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import uuid
@@ -242,22 +243,11 @@ async def websocket_endpoint(websocket: WebSocket, task_id: str):
     except WebSocketDisconnect:
         pass
     except Exception as exc:
-        try:
-            await websocket.send_text(
-                json.dumps(
-                    {
-                        "type": "error",
-                        "data": {"error": str(exc)},
-                    }
-                )
-            )
-        except Exception:
-            pass
+        with contextlib.suppress(Exception):
+            await websocket.send_text(json.dumps({"type": "error", "data": {"error": str(exc)}}))
     finally:
-        try:
+        with contextlib.suppress(Exception):
             await websocket.close()
-        except Exception:
-            pass
         _ws_queues.pop(task_id, None)
 
 
@@ -323,18 +313,20 @@ async def _run_task_background(
         _tasks[task_id]["result"] = result
 
     except Exception as exc:
-        error_event = {"type": "error", "data": {"error": str(exc)}, "turn": 0}
+        # We are on the event loop here, not in the worker thread, so this is
+        # a plain await — run_coroutine_threadsafe would be scheduling onto the
+        # very loop that is running this line.
         _tasks[task_id]["status"] = TaskStatus.FAILED
         _tasks[task_id]["error"] = str(exc)
-        asyncio.run_coroutine_threadsafe(queue.put(error_event), asyncio.get_event_loop())
+        await queue.put({"type": "error", "data": {"error": str(exc)}, "turn": 0})
 
 
 def _run_agent_sync(task_id, issue_text, repo_url, commit_sha, llm, queue, loop):
     """Synchronous wrapper for the agent loop, called from thread pool."""
     from agent.loop import run_agent
-    from sandbox.docker_workspace import DockerWorkspace
+    from sandbox import create_workspace
 
-    with DockerWorkspace.create(repo_url, commit_sha, task_id=task_id[:8]) as ws:
+    with create_workspace(repo_url, commit_sha, task_id=task_id[:8]) as ws:
         gen = run_agent(ws, issue_text, llm)
         task_result = None
         try:
@@ -362,9 +354,9 @@ def _run_agent_sync(task_id, issue_text, repo_url, commit_sha, llm, queue, loop)
 def _run_agentless_sync(task_id, issue_text, repo_url, commit_sha, llm, queue, loop):
     """Synchronous wrapper for agentless pipeline, called from thread pool."""
     from agentless.pipeline import run_agentless
-    from sandbox.docker_workspace import DockerWorkspace
+    from sandbox import create_workspace
 
-    with DockerWorkspace.create(repo_url, commit_sha, task_id=task_id[:8]) as ws:
+    with create_workspace(repo_url, commit_sha, task_id=task_id[:8]) as ws:
         # Emit phase start events
         for phase in [
             "Phase 1: Localizing...",
