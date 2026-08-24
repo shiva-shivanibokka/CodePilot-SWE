@@ -80,10 +80,17 @@ export interface RunSummary {
 
 const DEMO_BASE = "/demo";
 
-/** The list of recorded runs. Empty when none has been committed yet. */
+/**
+ * The list of recorded runs. Empty when none has been committed yet.
+ *
+ * Deliberately not `cache: "force-cache"`. Recordings are replaced whenever a
+ * run is re-recorded, and a forced cache serves the old file to anyone who has
+ * visited before — indefinitely, with no way for them to know. The default
+ * revalidates, and these are small enough that a 304 costs nothing.
+ */
 export async function loadRunIndex(): Promise<RunSummary[]> {
   try {
-    const res = await fetch(`${DEMO_BASE}/index.json`, { cache: "force-cache" });
+    const res = await fetch(`${DEMO_BASE}/index.json`);
     if (!res.ok) return [];
     const body = await res.json();
     return Array.isArray(body?.runs) ? (body.runs as RunSummary[]) : [];
@@ -95,7 +102,7 @@ export async function loadRunIndex(): Promise<RunSummary[]> {
 /** One full recording, fetched only when a visitor selects it. */
 export async function loadRun(file: string): Promise<RecordedRun | null> {
   try {
-    const res = await fetch(`${DEMO_BASE}/${file}`, { cache: "force-cache" });
+    const res = await fetch(`${DEMO_BASE}/${file}`);
     if (!res.ok) return null;
     const run = (await res.json()) as RecordedRun;
     return Array.isArray(run?.events) && run.events.length > 0 ? run : null;
