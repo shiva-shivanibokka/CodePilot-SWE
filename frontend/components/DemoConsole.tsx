@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import InfoTip from "@/components/InfoTip";
 import { fetchProviders, startTask, streamEvents } from "@/lib/api";
 import {
   formatDuration,
@@ -40,7 +41,6 @@ export function DemoConsole() {
   const [running, setRunning] = useState(false);
   const [finished, setFinished] = useState(false);
   const [mode, setMode] = useState<"idle" | "replay" | "live">("idle");
-  const [showDiff, setShowDiff] = useState(false);
   const [error, setError] = useState("");
 
   const stopRef = useRef(false);
@@ -89,7 +89,6 @@ export function DemoConsole() {
     setLines([]);
     setCost({ usd: 0, tokens: 0, turns: 0 });
     setFinished(false);
-    setShowDiff(false);
     setError("");
   }
 
@@ -99,7 +98,7 @@ export function DemoConsole() {
 
   function handleEvent(e: AgentEvent) {
     const turn = e.turn ?? 0;
-    const g = turn ? `T${turn}` : "··";
+    const g = turn ? `T${turn}` : "";
     const d = (e.data ?? {}) as Record<string, unknown>;
     if (turn) setCost((c) => ({ ...c, turns: Math.max(c.turns, turn) }));
 
@@ -114,11 +113,11 @@ export function DemoConsole() {
       case "tool_call": {
         const inp = (d.input ?? {}) as Record<string, unknown>;
         const arg = inp.command ?? inp.query ?? inp.path ?? "";
-        push({ kind: "tool", gutter: g, body: `▸ ${d.tool_name}(${trim(String(arg), 140)})` });
+        push({ kind: "tool", gutter: g, body: `▸ ${d.tool_name}(${trim(String(arg), 150)})` });
         break;
       }
       case "tool_result":
-        push({ kind: "result", gutter: "", body: `  └ ${trim(String(d.result ?? ""), 220)}` });
+        push({ kind: "result", gutter: "", body: `└ ${trim(String(d.result ?? ""), 240)}` });
         break;
       case "cost_update":
         setCost({
@@ -136,9 +135,7 @@ export function DemoConsole() {
         push({
           kind: d.stop_reason === "done" ? "done" : "info",
           gutter: "",
-          body:
-            `● agent stopped: ${d.stop_reason} · ${d.turns ?? "?"} turns · ` +
-            `${d.diff_lines ?? "?"} lines changed`,
+          body: `● agent stopped: ${d.stop_reason} · ${d.turns ?? "?"} turns · ${d.diff_lines ?? "?"} lines changed`,
         });
         break;
       }
@@ -189,9 +186,11 @@ export function DemoConsole() {
   }
 
   return (
-    <section className="section wrap" id="demo">
-      <p className="eyebrow">Recorded run · the signature</p>
-      <h2>Watch it work</h2>
+    <>
+      <div className="panel-head">
+        <p className="eyebrow">Recorded run</p>
+        <h2>Watch it work</h2>
+      </div>
 
       {loadingRun ? (
         <p className="lede">Loading the recorded run…</p>
@@ -205,38 +204,39 @@ export function DemoConsole() {
         </p>
       )}
 
+      {run && <RunFacts run={run} />}
+
+      <div className="hunk">
+        <span>@@ agent log @@</span>
+        <b>{run ? `${run.events.length} events` : "no run"}</b>
+        <span>every line is what actually happened</span>
+      </div>
+
       <div className="console">
         <div className="console-bar">
-          <div className="dot-row">
-            <span className={`dot ${running ? "live" : ""}`} />
-            <span className="dot" />
-            <span className="dot" />
-          </div>
+          <span className={`dot ${running ? "live" : ""}`} />
+          <span className="dot" />
+          <span className="dot" />
           <span className="console-title">swe-agent · {approach}</span>
-          <span
-            className="console-mode"
-            style={{ color: mode === "live" ? "var(--ok)" : "var(--dim)" }}
-          >
+          <span className="console-mode">
             {mode === "idle" ? "ready" : mode === "live" ? "live · your key" : "replay · recorded"}
           </span>
         </div>
 
         <div className="log" ref={logRef}>
           {lines.length === 0 ? (
-            <div className="log-line">
-              <span className="log-gutter">··</span>
-              <span className="log-body muted">
-                Press Play. Every line below is what the agent actually did — its own reasoning,
-                its tool calls, the test output it read, and the cost as it accrued.
+            <div className="log-line log-result">
+              <span className="log-gutter" />
+              <span className="log-body">
+                Press Play. Every line below is what the agent actually did — its own reasoning, its
+                tool calls, the test output it read, and the cost as it accrued.
               </span>
             </div>
           ) : (
             lines.map((l, i) => (
               <div
                 key={i}
-                className={`log-line log-${
-                  l.kind === "info" ? "result" : l.kind === "tool" ? "tool" : l.kind
-                }`}
+                className={`log-line log-${l.kind === "info" ? "result" : l.kind === "tool" ? "tool" : l.kind}`}
               >
                 <span className="log-gutter">{l.gutter}</span>
                 <span className="log-body">{l.body}</span>
@@ -261,18 +261,38 @@ export function DemoConsole() {
         </div>
       </div>
 
-      {finished && run && (
-        <div className="verdict">
-          <Verdict run={run} />
-          <button className="btn btn-ghost" onClick={() => setShowDiff((v) => !v)}>
-            {showDiff ? "Hide the patch" : "Show the patch it wrote"}
+      <div className="actions">
+        {running ? (
+          <button className="btn btn-ghost" onClick={stop}>
+            Stop
           </button>
-          {showDiff && <pre className="diff">{run.diff || "(no changes)"}</pre>}
-        </div>
-      )}
+        ) : (
+          <button className="btn btn-primary" onClick={runReplay} disabled={!run}>
+            {finished ? "Play it again" : "Play the recorded run ↵"}
+          </button>
+        )}
+        {liveEnabled && (
+          <button className="btn btn-ghost" onClick={runLive} disabled={running || !model}>
+            Run live with my key
+          </button>
+        )}
+        {!liveEnabled && (
+          <span className="notice">
+            Live BYOK runs work when you run the backend locally — two commands, no Docker required.
+          </span>
+        )}
+        {error && <span className="notice err">{error}</span>}
+      </div>
 
-      {liveEnabled ? (
+      {finished && run && <Verdict run={run} />}
+      {run && <Patch run={run} />}
+
+      {liveEnabled && (
         <>
+          <div className="hunk">
+            <span>@@ live run @@</span>
+            <b>bring your own key</b>
+          </div>
           <div className="byok">
             <div className="field">
               <label htmlFor="issue">GitHub issue URL</label>
@@ -285,11 +305,7 @@ export function DemoConsole() {
             </div>
             <div className="field">
               <label htmlFor="provider">Provider</label>
-              <select
-                id="provider"
-                value={provider}
-                onChange={(e) => setProvider(e.target.value)}
-              >
+              <select id="provider" value={provider} onChange={(e) => setProvider(e.target.value)}>
                 {reg?.providers.map((p) => (
                   <option key={p.key} value={p.key}>
                     {p.label}
@@ -307,16 +323,14 @@ export function DemoConsole() {
                 ))}
               </select>
             </div>
-          </div>
-          <div className="byok wide">
             <div className="field">
-              <label htmlFor="apikey">Your {currentProvider?.label} API key</label>
+              <label htmlFor="apikey">Your {currentProvider?.label} key</label>
               <input
                 id="apikey"
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder="used for this run only — never stored"
+                placeholder="used for this run only"
                 autoComplete="off"
               />
             </div>
@@ -332,44 +346,13 @@ export function DemoConsole() {
               </select>
             </div>
           </div>
-          <div className="byok-actions">
-            {running ? (
-              <button className="btn btn-ghost" onClick={stop}>
-                Stop
-              </button>
-            ) : (
-              <button className="btn btn-primary" onClick={runLive} disabled={!model}>
-                Run live ↵
-              </button>
-            )}
-            <button className="btn btn-ghost" onClick={runReplay} disabled={running || !run}>
-              Replay the recorded run
-            </button>
-            {error && <span className="notice err">{error}</span>}
-          </div>
           <p className="privacy">
-            🔒 Your key goes straight to your chosen provider for this run and is never stored,
-            logged, or reused.
+            Your key goes straight to your chosen provider for this run and is never stored, logged,
+            or reused.
           </p>
         </>
-      ) : (
-        <div className="byok-actions">
-          {running ? (
-            <button className="btn btn-ghost" onClick={stop}>
-              Stop
-            </button>
-          ) : (
-            <button className="btn btn-primary" onClick={runReplay} disabled={!run}>
-              Play the recorded run ↵
-            </button>
-          )}
-          <span className="notice">
-            Live BYOK runs (Anthropic · OpenAI · Google · Groq) work when you run the backend
-            locally — two commands, no Docker required.
-          </span>
-        </div>
       )}
-    </section>
+    </>
   );
 }
 
@@ -377,37 +360,85 @@ function RunHeader({ run }: { run: RecordedRun }) {
   const recorded = formatRecordedAt(run.recordedAt);
   return (
     <div className="runcard">
-      <p className="runcard-lede">
-        A real run, recorded{recorded && ` on ${recorded}`}. The agent was given{" "}
+      <p>
+        A real run, recorded{recorded && ` on ${recorded}`}. The agent was handed{" "}
         <a href={run.task.url} target="_blank" rel="noreferrer" className="link">
           {run.task.id}
         </a>{" "}
         and nothing else — no hints, and none of the tests it would be graded on. It read the
-        repository, edited it, and ran the suite itself. The run below took{" "}
+        repository, edited it, and ran the suite itself. The run took{" "}
         <strong>{formatDuration(run.durationSeconds)}</strong> and plays back in about{" "}
-        {Math.round(playbackSeconds(run.events))}s: the only thing altered is how long the pauses
-        last.
+        <strong>{Math.round(playbackSeconds(run.events))}s</strong>: the only thing altered is how
+        long the pauses last.
       </p>
-      <dl className="runcard-facts">
-        <Fact label="Model" value={`${run.provider}/${run.model}`} />
-        <Fact label="Real duration" value={formatDuration(run.durationSeconds)} />
-        <Fact label="Cost" value={`$${run.costUsd.toFixed(4)}`} />
-        <Fact label="Turns" value={String(run.turns)} />
-        <Fact
-          label="Tokens"
-          value={(run.inputTokens + run.outputTokens).toLocaleString()}
-        />
-        <Fact label="Sandbox" value={run.backend === "docker" ? "Docker" : "local"} />
-      </dl>
     </div>
   );
 }
 
-function Fact({ label, value }: { label: string; value: string }) {
+function RunFacts({ run }: { run: RecordedRun }) {
+  const resolved = run.grading?.graded && run.grading.resolved;
+  return (
+    <dl className="facts">
+      <Fact
+        label="Verdict"
+        tip="Graded the way SWE-bench does: the instance's own test patch is applied only after the agent has finished, then its FAIL_TO_PASS and PASS_TO_PASS tests are run. The agent never sees the tests it is judged on."
+      >
+        <dd className={resolved ? "ok" : run.grading?.graded ? "bad" : ""}>
+          {run.grading?.graded ? (resolved ? "Resolved" : "Not resolved") : "Not graded"}
+        </dd>
+      </Fact>
+      <Fact
+        label="Cost"
+        tip="What the provider billed for this run, read back from the API rather than estimated from a price table."
+      >
+        <dd>${run.costUsd.toFixed(4)}</dd>
+      </Fact>
+      <Fact
+        label="Turns"
+        tip="One turn is a single model call plus the results of any tools it asked for. Nothing capped this run at eight — the agent decided it was finished."
+      >
+        <dd>{run.turns}</dd>
+      </Fact>
+      <Fact
+        label="Tokens"
+        tip="Input plus output across every turn. Input dominates because the whole conversation is re-sent each turn, which is why the context budget manager exists."
+      >
+        <dd>{(run.inputTokens + run.outputTokens).toLocaleString()}</dd>
+      </Fact>
+      <Fact
+        label="Wall clock"
+        tip="How long the real run took end to end, including the time spent waiting on the model and running the test suite."
+      >
+        <dd>{formatDuration(run.durationSeconds)}</dd>
+      </Fact>
+      <Fact
+        label="Workspace"
+        tip={
+          run.backend === "docker"
+            ? "A throwaway container per task: no network, non-root, resource-capped, host filesystem never mounted."
+            : "A temp directory with its own virtualenv on the recording machine. No container — the backend that exists so the agent can run where Docker cannot."
+        }
+      >
+        <dd className="small">{run.backend === "docker" ? "Docker sandbox" : "Local checkout"}</dd>
+      </Fact>
+      <Fact
+        label="Model"
+        tip="Every call is bring-your-own-key through one provider-agnostic client. The same loop runs on Anthropic, OpenAI, Google or Groq."
+      >
+        <dd className="small">{run.model}</dd>
+      </Fact>
+    </dl>
+  );
+}
+
+function Fact({ label, tip, children }: { label: string; tip: string; children: React.ReactNode }) {
   return (
     <div className="fact">
-      <dt>{label}</dt>
-      <dd>{value}</dd>
+      <dt>
+        {label}
+        <InfoTip text={tip} label={label} />
+      </dt>
+      {children}
     </div>
   );
 }
@@ -416,25 +447,102 @@ function Verdict({ run }: { run: RecordedRun }) {
   const g = run.grading;
   if (!g?.graded) {
     return (
-      <p className="verdict-line">
-        <span className="pill pill-dim">not graded</span>
-        {g?.reason ? ` ${g.reason}.` : " No grading step ran for this recording."}
-      </p>
+      <div className="verdict">
+        <p className="verdict-line">
+          <span className="pill pill-dim">not graded</span>
+          {g?.reason ? ` ${g.reason}.` : " No grading step ran for this recording."}
+        </p>
+      </div>
     );
   }
   return (
-    <div>
+    <div className="verdict">
       <p className="verdict-line">
         <span className={`pill ${g.resolved ? "pill-ok" : "pill-bad"}`}>
           {g.resolved ? "resolved" : "not resolved"}
         </span>{" "}
         {g.resolved
-          ? `The patch made the ${g.failToPassCount ?? "failing"} target test(s) pass without breaking the rest.`
+          ? `The patch made the ${g.failToPassCount ?? "failing"} target test${g.failToPassCount === 1 ? "" : "s"} pass without breaking the ${g.passToPassCount ?? "other"} that already passed.`
           : "The patch did not satisfy the benchmark's own tests. That result is recorded as it happened."}
       </p>
-      {g.output && <pre className="diff">{g.output}</pre>}
+      {g.output && <pre className="testout">{g.output.trim()}</pre>}
     </div>
   );
+}
+
+/**
+ * The patch, rendered as a review rather than as a blob.
+ *
+ * It is the thing the agent actually produced, so it gets the line rails and
+ * add/remove colouring a reviewer would expect instead of being dumped into a
+ * grey <pre> that nobody reads.
+ */
+function Patch({ run }: { run: RecordedRun }) {
+  const rows = useMemo(() => parseDiff(run.diff), [run.diff]);
+  if (!rows.length) return null;
+
+  const added = rows.filter((r) => r.kind === "add").length;
+  const removed = rows.filter((r) => r.kind === "del").length;
+
+  return (
+    <>
+      <div className="hunk">
+        <span>@@ the patch it wrote @@</span>
+        <b>
+          +{added} −{removed}
+        </b>
+        <span>{run.conclusion ? trim(run.conclusion, 110) : ""}</span>
+      </div>
+      <div className="card">
+        <div className="card-head">
+          <span>{fileOf(run.diff) ?? "patch"}</span>
+          <span className="right">unified diff · as submitted</span>
+        </div>
+        <div className="diff">
+          {rows.map((r, i) => (
+            <div key={i} className={`diff-row ${r.kind}`}>
+              <span className="n">{r.n ?? ""}</span>
+              <span className="t">{r.text}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+interface DiffRow {
+  kind: "add" | "del" | "meta" | "hunkline" | "ctx";
+  n: number | null;
+  text: string;
+}
+
+/** Turn a unified diff into rows with new-file line numbers on the rail. */
+function parseDiff(diff: string): DiffRow[] {
+  const rows: DiffRow[] = [];
+  let line = 0;
+
+  for (const raw of diff.split("\n")) {
+    if (raw.startsWith("diff --git") || raw.startsWith("index ") || raw.startsWith("--- ") || raw.startsWith("+++ ")) {
+      rows.push({ kind: "meta", n: null, text: raw });
+    } else if (raw.startsWith("@@")) {
+      const match = /\+(\d+)/.exec(raw);
+      line = match ? Number(match[1]) : line;
+      rows.push({ kind: "hunkline", n: null, text: raw });
+    } else if (raw.startsWith("+")) {
+      rows.push({ kind: "add", n: line++, text: raw });
+    } else if (raw.startsWith("-")) {
+      rows.push({ kind: "del", n: null, text: raw });
+    } else if (raw.length || rows.length) {
+      rows.push({ kind: "ctx", n: line++, text: raw });
+    }
+  }
+  return rows;
+}
+
+function fileOf(diff: string): string | null {
+  const match = /^\+\+\+ b\/(.+)$/m.exec(diff);
+  return match ? match[1] : null;
 }
 
 const trim = (s: string, n: number) => (s.length > n ? s.slice(0, n) + "…" : s);
@@ -446,7 +554,7 @@ function gradingLine(run: RecordedRun): LogLine | null {
     kind: g.resolved ? "done" : "error",
     gutter: "",
     body: g.resolved
-      ? `● GRADED: resolved — the benchmark's own tests pass against this patch`
-      : `● GRADED: not resolved — the benchmark's own tests still fail`,
+      ? "● GRADED: resolved — the benchmark's own tests pass against this patch"
+      : "● GRADED: not resolved — the benchmark's own tests still fail",
   };
 }

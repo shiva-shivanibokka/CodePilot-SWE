@@ -1,32 +1,30 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
+import { Inter_Tight, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-const spaceGrotesk = Space_Grotesk({
+// Inter Tight for display and body — the tighter widths hold a large headline
+// without the quirk of a geometric face; JetBrains Mono for every figure, path
+// and log line, which is most of this page.
+// Both are variable fonts: omitting `weight` loads the full axis, so the
+// stylesheet can use in-between weights like 650 for display type.
+const interTight = Inter_Tight({
   subsets: ["latin"],
-  weight: ["500", "700"],
-  variable: "--font-space",
+  variable: "--font-inter-tight",
 });
-const plexSans = IBM_Plex_Sans({
+const jetbrains = JetBrains_Mono({
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  variable: "--font-plex",
-});
-const plexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
-  variable: "--font-mono",
+  variable: "--font-jetbrains",
 });
 
 export const metadata: Metadata = {
-  title: "Autonomous SWE Agent — agentic vs. agentless on SWE-bench-lite",
+  title: "Autonomous SWE Agent — a recorded run, graded",
   description:
-    "An autonomous software-engineering agent that resolves real GitHub issues two ways — an agentic tool-use loop and a 3-phase agentless pipeline — benchmarked on SWE-bench-lite with full cost accounting. Bring your own key.",
+    "An autonomous software-engineering agent that resolves real GitHub issues two ways — an agentic tool-use loop and a 3-phase agentless pipeline. Watch a real recorded run, graded against SWE-bench's own tests, with every token and dollar accounted for.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${spaceGrotesk.variable} ${plexSans.variable} ${plexMono.variable}`}>
+    <html lang="en" className={`${interTight.variable} ${jetbrains.variable}`}>
       <body>{children}</body>
     </html>
   );
