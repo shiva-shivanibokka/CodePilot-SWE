@@ -1,8 +1,8 @@
-# Serving-only dependencies for the hosted API (Render/Fly).
-# Live agent runs need a Docker sandbox and the search/eval stack — those extras
-# (numpy, sentence-transformers, docker, swebench) are intentionally excluded so
-# the hosted backend stays light. Install the full set with `pip install -e ".[dev]"`
-# locally to run the agent and the benchmark.
+# Serving-only dependencies, paired with Dockerfile.serve.
+# Live agent runs need a workspace backend and the search stack; those are
+# excluded here so the image stays small. For everything else install the
+# package itself: pip install -e ".[dev]" (add [semantic] for embedding search,
+# [eval] for the SWE-bench dataset).
 litellm>=1.44.0
 PyGithub>=2.3.0
 fastapi>=0.111.0

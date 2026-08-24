@@ -1,4 +1,6 @@
-# Lightweight serving image for Fly.io — metadata + benchmark endpoints only.
+# Lightweight serving image — metadata + benchmark endpoints only.
+# For any host that takes a Dockerfile. Nothing depends on it today: the
+# frontend serves those two read-only endpoints from its own route handlers.
 # Excludes the Docker sandbox, embedding search, and eval stack (PyTorch/swebench),
 # so the image stays small. Live agent runs happen locally, not here.
 FROM python:3.11-slim

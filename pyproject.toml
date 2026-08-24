@@ -12,12 +12,9 @@ dependencies = [
     "litellm>=1.44.0",
     # GitHub
     "PyGithub>=2.3.0",
-    # Search
+    # Search — BM25 always; the embedding half is an extra (see [semantic]).
     "rank-bm25>=0.2.2",
-    "sentence-transformers>=3.0.0",
     "numpy>=1.26.0",
-    # SWE-bench
-    "swebench>=2.1.0",
     # API / streaming
     "fastapi>=0.111.0",
     "uvicorn[standard]>=0.30.0",
@@ -41,6 +38,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# sentence-transformers drags in PyTorch — roughly 2.5 GB — for the semantic
+# half of hybrid search. search_codebase already falls back to BM25-only when
+# it is absent, so it does not belong in a base install that most users only
+# want in order to read the code or run the tests.
+semantic = [
+    "sentence-transformers>=3.0.0",
+]
+# Only eval/harness.py needs the dataset, and only to run the 300-issue
+# benchmark. Nothing else imports it.
+eval = [
+    "swebench>=2.1.0",
+]
 dev = [
     "pytest>=8.2.0",
     "pytest-asyncio>=0.23.0",

@@ -11,9 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install Python dependencies first (layer cache)
+# Dependencies first so a source-only change does not reinstall them.
+# Runtime deps only: test and lint tooling has no business in this image.
 COPY pyproject.toml .
-RUN pip install --no-cache-dir -e ".[dev]"
+RUN pip install --no-cache-dir -e "."
 
 # Copy source code
 COPY . .

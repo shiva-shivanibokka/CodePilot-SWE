@@ -11,3 +11,5 @@ eval/results/*.json
 eval/results/*.jsonl
 *.db
 *.log
+.venv/
+node_modules/
