@@ -53,5 +53,10 @@ RUN mkdir -p /repo && chown sweagent:sweagent /repo
 WORKDIR /repo
 USER sweagent
 
+# The repo is streamed in as root and then chowned. Marking it safe up front
+# means git never refuses the checkout as "dubious ownership" mid-run — a
+# failure that surfaces as an empty diff rather than as an error.
+RUN git config --global --add safe.directory /repo
+
 # Default: just run bash. The agent will exec commands into this container.
 CMD ["/bin/bash"]
