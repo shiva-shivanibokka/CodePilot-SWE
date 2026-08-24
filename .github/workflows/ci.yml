@@ -5,6 +5,7 @@ on:
     branches: [main, dev]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 env:
   PYTHON_VERSION: "3.11"
@@ -25,8 +26,10 @@ jobs:
       - name: Install ruff
         run: pip install "ruff>=0.15,<0.16"
 
+      # No flags: use the rule set in pyproject.toml, so CI and a local
+      # `ruff check .` cannot disagree about what passing means.
       - name: Run ruff
-        run: ruff check . --select E,F,I,UP --ignore E501
+        run: ruff check .
 
   # ── Job 2: Unit Tests ──────────────────────────────────────────────────────
   unit-tests:
@@ -42,13 +45,42 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: |
-          pip install -e ".[dev]"
+        run: pip install -e ".[dev]"
 
       - name: Run unit tests (fully mocked — no Docker, no LLM, no network)
         run: pytest tests/ -v --timeout=60
 
-  # ── Job 3: Docker Build ────────────────────────────────────────────────────
+  # ── Job 3: Frontend ────────────────────────────────────────────────────────
+  # The deployed artifact is the frontend, so a build failure here is a broken
+  # site. Checking it in CI means that is caught before Vercel publishes it.
+  frontend:
+    name: Frontend (typecheck + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Validate the recorded run
+        run: node scripts/validate-run.mjs
+
+      - name: Build
+        run: npm run build
+
+  # ── Job 4: Docker Build ────────────────────────────────────────────────────
   docker-build:
     name: Docker Build
     runs-on: ubuntu-latest
@@ -65,13 +97,15 @@ jobs:
             -t swe-agent-sandbox:latest \
             sandbox/
 
-  # ── Job 4: Smoke Eval (5 instances, requires secrets) ─────────────────────
-  # Only runs on pushes to main with the API key set as a repo secret.
-  # This gives you a real "does the agent work?" gate on every merge.
+  # ── Job 5: Smoke Eval — manual only ────────────────────────────────────────
+  # Deliberately not on push. It needs a paid API key and spends real money, so
+  # running it automatically would either burn budget on every merge or, with no
+  # secret set, quietly no-op while still presenting itself as a passing gate.
+  # Trigger it from the Actions tab when you actually want it.
   smoke-eval:
     name: Smoke Eval (5 SWE-bench instances)
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch'
     needs: [lint, unit-tests, docker-build]
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -81,6 +115,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Require an API key
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "ANTHROPIC_API_KEY is not set as a repository secret." >&2
+            echo "Add it under Settings > Secrets and variables > Actions." >&2
+            exit 1
+          fi
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -88,7 +130,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,eval]"
 
       - name: Build sandbox Docker image
         run: |
@@ -98,9 +140,7 @@ jobs:
             sandbox/
 
       - name: Run smoke eval (agent, 5 instances)
-        run: |
-          python -m eval.run_eval --approach agent --limit 5 --workers 2
-        continue-on-error: true  # Don't fail CI if eval performance drops
+        run: python -m eval.run_eval --approach agent --limit 5 --workers 2
 
       - name: Upload eval results
         uses: actions/upload-artifact@v4
