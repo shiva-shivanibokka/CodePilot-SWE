@@ -49,12 +49,27 @@ class TestBuildTestCommand:
             "PASS_TO_PASS": "[]",
         }
         cmd = build_test_command(instance)
-        assert "pytest tests/" in cmd
+        # No path: pytest's own rootdir discovery beats guessing "tests/",
+        # which several SWE-bench repos do not have.
+        assert cmd.startswith("python -m pytest -x -q")
 
     def test_missing_keys_fallback(self):
         instance = {"instance_id": "test__repo-000"}
         cmd = build_test_command(instance)
         assert "pytest" in cmd
+
+    def test_no_timeout_flag(self):
+        """
+        --timeout needs pytest-timeout, which target repos rarely install, and
+        pytest exits 4 on an unknown argument — which grading cannot tell apart
+        from a failing test. The workspace enforces the deadline instead.
+        """
+        instance = {
+            "instance_id": "test__repo-111",
+            "FAIL_TO_PASS": json.dumps(["tests/test_a.py::test_1"]),
+            "PASS_TO_PASS": "[]",
+        }
+        assert "--timeout" not in build_test_command(instance)
 
 
 class TestInstanceResult:

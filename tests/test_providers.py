@@ -8,6 +8,7 @@ tool-schema converter, and the assistant-message rebuild used by the agent loop.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 
 import pytest
@@ -105,5 +106,5 @@ class TestLLMConfig:
     def test_is_hashable_and_frozen(self):
         cfg = LLMConfig(provider="openai", model="gpt-5.6-terra", api_key="sk-x")
         assert {cfg}  # hashable
-        with pytest.raises(Exception):
+        with pytest.raises((AttributeError, TypeError, dataclasses.FrozenInstanceError)):
             cfg.api_key = "changed"  # frozen
