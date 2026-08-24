@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { About } from "@/components/About";
 import { Architecture } from "@/components/Architecture";
 import { Benchmark } from "@/components/Benchmark";
 import Rail, { type Section } from "@/components/Rail";
@@ -9,6 +10,7 @@ import { RunItYourself } from "@/components/RunItYourself";
 import { loadRunIndex, type RunSummary } from "@/lib/replay";
 
 const SECTIONS: Section[] = [
+  { id: "about", label: "What this is" },
   { id: "run", label: "Watch it work", note: "recorded" },
   { id: "benchmark", label: "Benchmark" },
   { id: "architecture", label: "Architecture" },
@@ -84,6 +86,7 @@ export default function AppShell() {
           <RunDeck runs={runs} selected={selected} onSelect={selectRun} />
         ) : (
           <div className="pane">
+            {active === "about" && <About runs={runs} />}
             {active === "benchmark" && <Benchmark runs={runs} />}
             {active === "architecture" && <Architecture />}
             {active === "local" && <RunItYourself />}

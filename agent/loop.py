@@ -23,6 +23,7 @@ Streaming events:
 from __future__ import annotations
 
 import os
+import re
 import time
 from collections.abc import Generator
 from dataclasses import dataclass, field
@@ -309,6 +310,7 @@ def run_agent(
         # Note: true resolution requires running the SWE-bench test harness,
         # which happens in eval/harness.py. This is a heuristic for the live UI.
         resolved_heuristic = bool(conclusion) and bool(diff.strip())
+        changed = changed_lines(diff)
 
         done_event = emit(
             AgentEvent(
@@ -321,6 +323,11 @@ def run_agent(
                     "total_input_tokens": total_input_tokens,
                     "total_output_tokens": total_output_tokens,
                     "duration_seconds": round(duration, 1),
+                    # Both, because they answer different questions and only
+                    # one of them is what a reader means by "lines changed":
+                    # a one-line edit still produces a 13-line diff once the
+                    # headers, the hunk marker and the context are counted.
+                    "changed_lines": changed,
                     "diff_lines": len(diff.splitlines()),
                 },
                 turn=turn,
@@ -354,6 +361,21 @@ def run_agent(
             stop_reason=stop_reason,
             error=error_message,
         )
+
+
+def changed_lines(diff: str) -> int:
+    """
+    Lines the patch actually adds or removes.
+
+    Not the length of the diff: that counts `diff --git`, `index`, the `---`
+    and `+++` headers, every `@@` marker and all the surrounding context, so a
+    single-line edit reports as thirteen.
+    """
+    return sum(
+        1
+        for line in diff.splitlines()
+        if re.match(r"^[+-][^+-]", line) and line[1:].strip()
+    )
 
 
 def _dispatch_tool(

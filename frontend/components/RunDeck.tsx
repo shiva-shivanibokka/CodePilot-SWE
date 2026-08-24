@@ -85,6 +85,8 @@ export default function RunDeck({
     stopRef.current = true;
   }, []);
 
+  const changed = run?.task.agentPatchLines;
+
   const handleEvent = useCallback((e: AgentEvent) => {
     const turn = e.turn ?? 0;
     const gutter = turn ? `T${turn}` : "";
@@ -133,7 +135,11 @@ export default function RunDeck({
           {
             kind: d.stop_reason === "done" ? "done" : "info",
             gutter: "",
-            body: `● agent stopped: ${d.stop_reason} · ${d.turns ?? "?"} turns · ${d.diff_lines ?? "?"} lines changed`,
+            // `changed_lines` is what a reader means; `diff_lines` counts the
+            // headers and context too, so a one-line edit reported as 13.
+            // Recordings made before that distinction existed carry only the
+            // latter, so fall back to the count measured off the diff itself.
+            body: `● agent stopped: ${d.stop_reason} · ${d.turns ?? "?"} turns · ${d.changed_lines ?? changed ?? d.diff_lines ?? "?"} lines changed`,
           },
         ]);
         break;
@@ -142,7 +148,7 @@ export default function RunDeck({
         setLines((p) => [...p, { kind: "error", gutter: "", body: `✕ ${d.error ?? "error"}` }]);
         break;
     }
-  }, []);
+  }, [changed]);
 
   async function play() {
     if (!run) return;
