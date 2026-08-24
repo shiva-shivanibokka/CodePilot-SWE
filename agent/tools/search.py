@@ -26,7 +26,7 @@ from rank_bm25 import BM25Okapi
 
 from observability.metrics import metrics
 from observability.tracing import get_tracer
-from sandbox.docker_workspace import DockerWorkspace
+from sandbox.workspace import Workspace
 
 tracer = get_tracer(__name__)
 
@@ -95,7 +95,7 @@ class RepoIndex:
     embed_model: Any = None
 
     @classmethod
-    def build(cls, workspace: DockerWorkspace, file_pattern: str | None = None) -> RepoIndex:
+    def build(cls, workspace: Workspace, file_pattern: str | None = None) -> RepoIndex:
         """Build the index by reading all Python files from the workspace."""
         with tracer.start_as_current_span("search.build_index"):
             # Get list of files
@@ -169,12 +169,14 @@ def _tokenize(text: str) -> list[str]:
     return [t for t in tokens if len(t) > 1]
 
 
-# Per-task index cache: task_id -> RepoIndex
-_index_cache: dict[str, RepoIndex] = {}
+# Cache key is (task_id, file_pattern), not task_id alone: the index only holds
+# the files matching the pattern it was built with, so reusing it for a
+# different pattern answers the wrong question with no sign anything is wrong.
+_index_cache: dict[tuple[str, str | None], RepoIndex] = {}
 
 
 def run_search(
-    workspace: DockerWorkspace,
+    workspace: Workspace,
     query: str,
     file_pattern: str | None = None,
     top_k: int = 10,
@@ -184,7 +186,7 @@ def run_search(
     Search the codebase and return formatted results for the LLM.
 
     Args:
-        workspace:    Active DockerWorkspace.
+        workspace:    Active Workspace.
         query:        The search query.
         file_pattern: Optional glob to restrict files.
         top_k:        Number of results to return.
@@ -194,7 +196,7 @@ def run_search(
         Formatted string of search results for the LLM.
     """
     t0 = time.monotonic()
-    cache_key = task_id or workspace.task_id
+    cache_key = (task_id or workspace.task_id, file_pattern)
 
     with tracer.start_as_current_span("tool.search") as span:
         span.set_attribute("query", query)
@@ -236,10 +238,7 @@ def _search(index: RepoIndex, query: str, top_k: int) -> list[SearchResult]:
 
     # Normalise BM25 scores to [0, 1]
     bm25_max = bm25_scores.max()
-    if bm25_max > 0:
-        bm25_norm = bm25_scores / bm25_max
-    else:
-        bm25_norm = bm25_scores
+    bm25_norm = bm25_scores / bm25_max if bm25_max > 0 else bm25_scores
 
     # Embedding scores
     if index.embeddings is not None and index.embed_model is not None:
@@ -279,5 +278,6 @@ def _search(index: RepoIndex, query: str, top_k: int) -> list[SearchResult]:
 
 
 def clear_index(task_id: str) -> None:
-    """Clear the cached index for a task. Call on task teardown."""
-    _index_cache.pop(task_id, None)
+    """Drop every cached index for a task. Call on task teardown."""
+    for key in [k for k in _index_cache if k[0] == task_id]:
+        del _index_cache[key]

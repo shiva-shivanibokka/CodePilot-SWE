@@ -26,7 +26,7 @@ from typing import Any
 
 from observability.metrics import metrics
 from observability.tracing import get_tracer
-from sandbox.docker_workspace import DockerWorkspace
+from sandbox.workspace import Workspace
 
 tracer = get_tracer(__name__)
 
@@ -89,16 +89,23 @@ EDITOR_TOOL_SCHEMA: dict[str, Any] = {
     },
 }
 
-# In-memory undo buffer: path → previous content
-_undo_buffer: dict[str, str] = {}
+# In-memory undo buffer: (task_id, path) → previous content.
+# Keyed by task as well as path because the eval harness runs several instances
+# concurrently in one process, and two of them editing the same path in
+# different checkouts would otherwise restore each other's file.
+_undo_buffer: dict[tuple[str, str], str] = {}
 
 
-def run_editor(workspace: DockerWorkspace, params: dict[str, Any]) -> str:
+def _undo_key(workspace, path: str) -> tuple[str, str]:
+    return (getattr(workspace, "task_id", ""), path)
+
+
+def run_editor(workspace: Workspace, params: dict[str, Any]) -> str:
     """
     Execute an editor command and return a result string for the LLM.
 
     Args:
-        workspace: The active DockerWorkspace.
+        workspace: The active Workspace.
         params:    The tool input dict from the LLM.
 
     Returns:
@@ -127,7 +134,7 @@ def run_editor(workspace: DockerWorkspace, params: dict[str, Any]) -> str:
 
 
 def _dispatch(
-    workspace: DockerWorkspace,
+    workspace: Workspace,
     command: str | None,
     path: str,
     params: dict[str, Any],
@@ -154,7 +161,7 @@ def _dispatch(
 
 
 def _view(
-    workspace: DockerWorkspace,
+    workspace: Workspace,
     path: str,
     view_range: list[int] | None,
 ) -> str:
@@ -174,14 +181,11 @@ def _view(
         start, end = view_range
         if end == -1:
             result = workspace.run(
-                f"awk 'NR>={start}' '{path}' | nl -ba -nrz -v{start} | head -200"
+                f"awk 'NR>={start}' '{path}' | nl -ba -nln -v{start} | head -200"
             )
         else:
             result = workspace.run(
-                f"sed -n '{start},{end}p' '{path}' | cat -n | awk '{{printf \"%d\\t%s\\n\", NR+{start - 1}, $0}}'"
-            )
-            result = workspace.run(
-                f"awk 'NR>={start} && NR<={end}' '{path}' | nl -ba -nrz -v{start}"
+                f"awk 'NR>={start} && NR<={end}' '{path}' | nl -ba -nln -v{start}"
             )
     else:
         result = workspace.run(f"cat -n '{path}'")
@@ -199,7 +203,7 @@ def _view(
     return f"File: {path}\n{output}"
 
 
-def _create(workspace: DockerWorkspace, path: str, file_text: str) -> str:
+def _create(workspace: Workspace, path: str, file_text: str) -> str:
     """Create a new file. Fails if it already exists."""
     if workspace.file_exists(path):
         raise FileExistsError(
@@ -214,15 +218,15 @@ def _create(workspace: DockerWorkspace, path: str, file_text: str) -> str:
     return f"Created {path} ({lines} lines)"
 
 
-def _str_replace(workspace: DockerWorkspace, path: str, old_str: str, new_str: str) -> str:
+def _str_replace(workspace: Workspace, path: str, old_str: str, new_str: str) -> str:
     """
     Replace old_str with new_str in the file.
     Requires exactly one match — errors if zero or multiple matches found.
     """
     try:
         content = workspace.read_file(path)
-    except FileNotFoundError:
-        raise FileNotFoundError(f"File not found: {path}")
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"File not found: {path}") from exc
 
     count = content.count(old_str)
     if count == 0:
@@ -238,7 +242,7 @@ def _str_replace(workspace: DockerWorkspace, path: str, old_str: str, new_str: s
         )
 
     # Save to undo buffer
-    _undo_buffer[path] = content
+    _undo_buffer[_undo_key(workspace, path)] = content
 
     new_content = content.replace(old_str, new_str, 1)
     workspace.write_file(path, new_content)
@@ -251,12 +255,12 @@ def _str_replace(workspace: DockerWorkspace, path: str, old_str: str, new_str: s
     )
 
 
-def _insert(workspace: DockerWorkspace, path: str, insert_line: int, new_str: str) -> str:
+def _insert(workspace: Workspace, path: str, insert_line: int, new_str: str) -> str:
     """Insert new_str after insert_line in the file."""
     try:
         content = workspace.read_file(path)
-    except FileNotFoundError:
-        raise FileNotFoundError(f"File not found: {path}")
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"File not found: {path}") from exc
 
     lines = content.splitlines(keepends=True)
     if insert_line > len(lines):
@@ -264,7 +268,7 @@ def _insert(workspace: DockerWorkspace, path: str, insert_line: int, new_str: st
             f"insert_line {insert_line} is beyond the end of the file ({len(lines)} lines)."
         )
 
-    _undo_buffer[path] = content
+    _undo_buffer[_undo_key(workspace, path)] = content
 
     new_lines = new_str if new_str.endswith("\n") else new_str + "\n"
     lines.insert(insert_line, new_lines)
@@ -273,11 +277,12 @@ def _insert(workspace: DockerWorkspace, path: str, insert_line: int, new_str: st
     return f"Inserted {new_str.count(chr(10)) + 1} line(s) after line {insert_line} in {path}."
 
 
-def _undo(workspace: DockerWorkspace, path: str) -> str:
+def _undo(workspace: Workspace, path: str) -> str:
     """Revert the last edit to path."""
-    if path not in _undo_buffer:
+    key = _undo_key(workspace, path)
+    if key not in _undo_buffer:
         raise ValueError(f"No undo history for {path}.")
 
-    previous = _undo_buffer.pop(path)
+    previous = _undo_buffer.pop(key)
     workspace.write_file(path, previous)
     return f"Reverted {path} to previous state."

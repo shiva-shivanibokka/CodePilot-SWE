@@ -26,7 +26,7 @@ from typing import Any
 
 from observability.metrics import metrics
 from observability.tracing import get_tracer
-from sandbox.docker_workspace import CommandResult, DockerWorkspace
+from sandbox.workspace import CommandResult, Workspace
 
 tracer = get_tracer(__name__)
 
@@ -68,13 +68,13 @@ BASH_TOOL_SCHEMA: dict[str, Any] = {
 }
 
 
-def run_bash(workspace: DockerWorkspace, command: str) -> str:
+def run_bash(workspace: Workspace, command: str) -> str:
     """
     Execute a bash command in the sandbox and return a formatted result string
     suitable for feeding back to the LLM as a tool result.
 
     Args:
-        workspace: The active DockerWorkspace for this task.
+        workspace: The active Workspace for this task.
         command:   The shell command to run.
 
     Returns:
@@ -111,7 +111,12 @@ def run_bash(workspace: DockerWorkspace, command: str) -> str:
     output = result.output
 
     if result.timed_out:
-        output = f"[COMMAND TIMED OUT after {workspace._timeout_seconds}s]\n{output}"
+        notice = (
+            f"[COMMAND TIMED OUT after {result.timeout_seconds}s and was killed. "
+            "Whatever it printed before the kill is below. Re-run something "
+            "narrower — a single test file rather than the whole suite.]"
+        )
+        output = f"{notice}\n{output}"
 
     # Truncate if needed
     truncated = False

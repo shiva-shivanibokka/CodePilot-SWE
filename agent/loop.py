@@ -36,7 +36,7 @@ from agent.tools import TOOL_SCHEMAS, run_bash, run_editor, run_search
 from agent.tools.search import clear_index
 from observability.metrics import metrics
 from observability.tracing import get_tracer
-from sandbox.docker_workspace import DockerWorkspace
+from sandbox.workspace import Workspace
 
 tracer = get_tracer(__name__)
 
@@ -100,7 +100,7 @@ class TaskResult:
 
 
 def run_agent(
-    workspace: DockerWorkspace,
+    workspace: Workspace,
     issue_text: str,
     llm: LLMConfig,
     max_turns: int = MAX_TURNS,
@@ -112,7 +112,7 @@ def run_agent(
     works, and returns a TaskResult when done.
 
     Args:
-        workspace:  Active DockerWorkspace with the repo checked out.
+        workspace:  Active Workspace with the repo checked out.
         issue_text: The full GitHub issue text.
         llm:        Provider/model/api-key config (BYOK) — the caller's own key.
         max_turns:  Hard limit on number of agent turns.
@@ -278,12 +278,28 @@ def run_agent(
             )
             stop_reason = "error"
 
+        except Exception as exc:
+            # A tool or the sandbox itself failed. Report it and fall through to
+            # the summary rather than letting it escape the generator: the run
+            # still has a diff, a cost and an event log worth keeping, and the
+            # caller has no way to recover any of that from a raised exception.
+            error_message = f"{type(exc).__name__}: {exc}"
+            yield emit(
+                AgentEvent(type=EventType.ERROR, data={"error": error_message}, turn=turn)
+            )
+            stop_reason = "error"
+
         finally:
             # Always clean up the search index
             clear_index(task_id)
 
         # ── Collect final diff ────────────────────────────────────────────────
-        diff = workspace.get_diff()
+        try:
+            diff = workspace.get_diff()
+        except Exception as exc:  # a broken workspace must not erase the run
+            diff = ""
+            error_message = error_message or f"could not read diff: {exc}"
+            stop_reason = "error"
         duration = time.monotonic() - t0
 
         # ── Determine resolution ──────────────────────────────────────────────
@@ -341,7 +357,7 @@ def run_agent(
 
 
 def _dispatch_tool(
-    workspace: DockerWorkspace,
+    workspace: Workspace,
     tool_name: str,
     tool_input: dict[str, Any],
     task_id: str,
