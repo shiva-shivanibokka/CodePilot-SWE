@@ -49,10 +49,15 @@ load_dotenv(PROJECT_ROOT / ".env", override=True)
 from agent.llm import LLMConfig  # noqa: E402
 from agent.loop import run_agent  # noqa: E402
 from agent.providers import PROVIDERS, key_env_for  # noqa: E402
-from eval.harness import apply_test_patch, build_test_command, load_instance  # noqa: E402
+from eval.harness import (  # noqa: E402
+    apply_test_patch,
+    build_test_command,
+    load_difficulty_labels,
+    load_instance,
+)
 from sandbox import create_workspace  # noqa: E402
 
-DEFAULT_OUT = PROJECT_ROOT / "frontend" / "public" / "demo" / "run.json"
+DEMO_DIR = PROJECT_ROOT / "frontend" / "public" / "demo"
 
 # Playback pacing. A real run spends minutes waiting on the model and on test
 # suites; replaying that faithfully would be unwatchable, so gaps are clamped.
@@ -100,13 +105,66 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="For --issue runs: command used to check the agent's patch.",
     )
-    ap.add_argument("--out", default=str(DEFAULT_OUT))
     ap.add_argument(
         "--allow-empty",
         action="store_true",
         help="Write the recording even if the agent produced no diff.",
     )
     return ap.parse_args()
+
+
+def headline(problem_statement: str) -> str:
+    """The issue's first meaningful line, for use as a title."""
+    for line in problem_statement.strip().splitlines():
+        line = line.strip().lstrip("#").strip()
+        if len(line) > 3:
+            return line[:110]
+    return ""
+
+
+def write_manifest() -> None:
+    """
+    Rebuild demo/index.json from whatever recordings are on disk.
+
+    The site lists the runs before it loads any of them, so the manifest holds
+    only what the picker needs — id, title, difficulty, verdict, headline
+    figures. The events and the diff, which are the bulk of a recording, stay in
+    the per-run file and are fetched when a visitor actually chooses that run.
+    """
+    runs = []
+    for path in sorted(DEMO_DIR.glob("*.json")):
+        if path.name == "index.json":
+            continue
+        try:
+            run = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            print(f"[record] skipping unreadable {path.name}")
+            continue
+        grading = run.get("grading") or {}
+        runs.append(
+            {
+                "file": path.name,
+                "id": run["task"]["id"],
+                "title": run["task"].get("title") or run["task"]["id"],
+                "repo": run["task"].get("repo"),
+                "difficulty": run["task"].get("difficulty"),
+                "resolved": grading.get("resolved") if grading.get("graded") else None,
+                "model": run["model"],
+                "costUsd": run["costUsd"],
+                "turns": run["turns"],
+                "durationSeconds": run["durationSeconds"],
+                "events": len(run["events"]),
+            }
+        )
+
+    # Easiest first, then by cost, so the picker reads as a difficulty ramp.
+    order = {"<15 min fix": 0, "15 min - 1 hour": 1, "1-4 hours": 2, ">4 hours": 3}
+    runs.sort(key=lambda r: (order.get(r["difficulty"], 99), r["costUsd"]))
+
+    (DEMO_DIR / "index.json").write_text(
+        json.dumps({"runs": runs}, indent=2), encoding="utf-8"
+    )
+    print(f"Manifest: {len(runs)} run(s) -> {DEMO_DIR / 'index.json'}")
 
 
 def scan_for_secrets(payload: str) -> list[str]:
@@ -137,15 +195,21 @@ def resolve_task(args: argparse.Namespace) -> tuple[dict, dict | None]:
     if args.instance:
         print(f"Loading SWE-bench-lite instance {args.instance} ...")
         instance = load_instance(args.instance)
+        difficulty = load_difficulty_labels().get(instance["instance_id"])
+        if difficulty:
+            print(f"  difficulty (SWE-bench Verified, human annotated): {difficulty}")
         return (
             {
                 "kind": "swebench",
                 "id": instance["instance_id"],
-                "title": instance["instance_id"],
+                "title": headline(instance["problem_statement"]) or instance["instance_id"],
+                "repo": instance["repo"],
+                "difficulty": difficulty,
                 "url": f"https://github.com/{instance['repo']}",
                 "repoUrl": f"https://github.com/{instance['repo']}.git",
                 "baseCommit": instance["base_commit"],
                 "text": instance["problem_statement"],
+                "goldPatchLines": instance["patch"].count("\n"),
             },
             instance,
         )
@@ -159,6 +223,8 @@ def resolve_task(args: argparse.Namespace) -> tuple[dict, dict | None]:
             "kind": "issue",
             "id": f"{issue.repo_full_name}#{issue.issue_number}",
             "title": issue.issue_title,
+            "repo": issue.repo_full_name,
+            "difficulty": None,
             "url": args.issue,
             "repoUrl": issue.repo_url,
             "baseCommit": issue.base_commit,
@@ -300,9 +366,10 @@ def main() -> None:
             "       Check what the agent printed to the shell before retrying."
         )
 
-    out_path = Path(args.out)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+    DEMO_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = DEMO_DIR / f"{task['id'].replace('/', '_').replace('#', '-')}.json"
     out_path.write_text(payload, encoding="utf-8")
+    write_manifest()
 
     size_kb = len(payload.encode("utf-8")) / 1024
     verdict = "not graded"

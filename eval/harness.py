@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
@@ -157,36 +158,100 @@ def load_instance(instance_id: str) -> dict:
     raise KeyError(f"No SWE-bench-lite instance named {instance_id!r}")
 
 
+VERIFIED_ROWS_URL = (
+    "https://datasets-server.huggingface.co/rows"
+    "?dataset=princeton-nlp%2FSWE-bench_Verified&config=default&split=test"
+    "&offset={offset}&length={length}"
+)
+SWEBENCH_VERIFIED_SIZE = 500
+
+
+def load_difficulty_labels() -> dict[str, str]:
+    """
+    Human difficulty estimates for SWE-bench instances.
+
+    SWE-bench Verified carries a `difficulty` field — how long the annotators
+    judged each issue would take an engineer ("<15 min fix", "15 min - 1 hour",
+    "1-4 hours", ">4 hours"). Roughly a third of the Lite set also appears in
+    Verified and so has a label. This is why the site can group runs by
+    difficulty without anyone here inventing the grouping: unlabelled instances
+    are shown as unlabelled rather than guessed at.
+
+    Returns {} rather than raising if the dataset cannot be reached — a missing
+    label is a cosmetic loss, not a reason to abandon a recording.
+    """
+    import json as _json
+    import urllib.request
+
+    labels: dict[str, str] = {}
+    try:
+        for offset in range(0, SWEBENCH_VERIFIED_SIZE, 100):
+            url = VERIFIED_ROWS_URL.format(offset=offset, length=100)
+            with urllib.request.urlopen(url, timeout=60) as response:
+                for entry in _json.load(response)["rows"]:
+                    row = entry["row"]
+                    if row.get("difficulty"):
+                        labels[row["instance_id"]] = row["difficulty"]
+    except Exception as exc:  # noqa: BLE001 - any network failure is non-fatal
+        print(f"[eval] could not load difficulty labels ({exc}); continuing without them")
+    return labels
+
+
+def _test_ids(instance: dict, key: str) -> list[str]:
+    """Parse one of the instance's test-id lists, which arrive as JSON strings."""
+    value = instance.get(key, "[]")
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+    return list(value)
+
+
+def _patched_test_files(instance: dict) -> list[str]:
+    """Test files the instance's own test patch touches."""
+    return re.findall(r"^\+\+\+ b/(.+\.py)$", instance.get("test_patch") or "", re.MULTILINE)
+
+
 def build_test_command(instance: dict) -> str:
     """
     Build the pytest command that grades a SWE-bench instance.
 
-    Runs exactly the FAIL_TO_PASS and PASS_TO_PASS ids the instance names, so
-    a patch is judged on the tests the real fix was judged on. No --timeout
-    flag: that needs pytest-timeout, which most target repos do not install,
-    and pytest then exits 4 on an unrecognised argument — indistinguishable
-    from a failing test. Hangs are caught by the workspace's own deadline.
+    Test ids come in three shapes across the benchmark, and only one of them is
+    a pytest argument:
+
+      pytest node id   tests/test_config.py::test_toml       — flask, requests, …
+      bare name        test_issue_24211                      — sympy, 77 instances
+      unittest label   test_x (module.path.TestCase)         — django, 114 instances
+
+    Passing the last two positionally makes pytest exit 4 with "file or
+    directory not found", which grading cannot distinguish from a failing test —
+    so before this, 191 of the 300 instances could only ever score zero. Bare
+    names are matched with -k, scoped to the files the instance's own test patch
+    touches so the selector does not scan the entire suite.
+
+    No --timeout flag: that needs pytest-timeout, which target repos rarely
+    install, and an unrecognised argument is another silent exit 4. Hangs are
+    caught by the workspace's own deadline.
     """
-    fail_to_pass = instance.get("FAIL_TO_PASS", "[]")
-    pass_to_pass = instance.get("PASS_TO_PASS", "[]")
+    node_ids, bare = [], []
+    for test_id in _test_ids(instance, "FAIL_TO_PASS") + _test_ids(instance, "PASS_TO_PASS"):
+        (node_ids if "::" in test_id else bare).append(test_id)
 
-    if isinstance(fail_to_pass, str):
-        try:
-            fail_to_pass = json.loads(fail_to_pass)
-        except json.JSONDecodeError:
-            fail_to_pass = []
-    if isinstance(pass_to_pass, str):
-        try:
-            pass_to_pass = json.loads(pass_to_pass)
-        except json.JSONDecodeError:
-            pass_to_pass = []
+    if node_ids:
+        spec = " ".join(f'"{t}"' for t in node_ids[:MAX_GRADED_TESTS])
+        return f"python -m pytest {spec} -x -q --tb=short 2>&1"
 
-    all_tests = list(fail_to_pass) + list(pass_to_pass)
+    if bare:
+        # Django's "test_x (module.Class)" reduces to the method name, which -k
+        # matches; the parenthesised path is not a pytest selector.
+        names = [t.split(" ")[0] for t in bare[:MAX_GRADED_TESTS]]
+        selector = " or ".join(dict.fromkeys(names))
+        files = " ".join(_patched_test_files(instance))
+        scope = files or "."
+        return f'python -m pytest {scope} -k "{selector}" -x -q --tb=short 2>&1'
 
-    if all_tests:
-        test_spec = " ".join(f'"{t}"' for t in all_tests[:MAX_GRADED_TESTS])
-        return f"python -m pytest {test_spec} -x -q --tb=short 2>&1"
-    return "python -m pytest -x -q --tb=short 2>&1"
+    return REGRESSION_TEST_COMMAND
 
 
 def apply_test_patch(workspace, instance: dict) -> bool:

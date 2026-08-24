@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import InfoTip from "@/components/InfoTip";
 import { fetchBenchmark } from "@/lib/api";
+import type { RunSummary } from "@/lib/replay";
 import type { BenchmarkSummary } from "@/lib/types";
 
 type State = { status: "loading" | "empty" | "ready"; summaries: BenchmarkSummary[] };
 
-export function Benchmark() {
+export function Benchmark({ runs = [] }: { runs?: RunSummary[] }) {
   const [state, setState] = useState<State>({ status: "loading", summaries: [] });
 
   useEffect(() => {
@@ -24,9 +25,13 @@ export function Benchmark() {
   const agent = state.summaries.find((s) => s.approach === "agent");
   const agentless = state.summaries.find((s) => s.approach === "agentless");
 
+  const graded = runs.filter((r) => r.resolved !== null);
+  const solved = graded.filter((r) => r.resolved);
+  const spent = runs.reduce((total, r) => total + r.costUsd, 0);
+
   return (
     <>
-      <div className="panel-head">
+      <div>
         <p className="eyebrow">Results · head to head</p>
         <h2>The comparison is the artifact</h2>
         <p className="lede">
@@ -36,7 +41,7 @@ export function Benchmark() {
         </p>
       </div>
 
-      <div className="hunk">
+      <div className="rule">
         <span>@@ full benchmark @@</span>
         <b>not yet run</b>
         <span>no numbers are estimated or borrowed</span>
@@ -86,7 +91,7 @@ export function Benchmark() {
         </div>
       )}
 
-      <div className="hunk">
+      <div className="rule">
         <span>@@ what the papers report @@</span>
         <b>theirs, not this system&apos;s</b>
       </div>
@@ -127,10 +132,10 @@ export function Benchmark() {
             Measured so far
             <InfoTip
               label="what has been measured"
-              text="One SWE-bench-lite instance, run end to end and graded against its own FAIL_TO_PASS and PASS_TO_PASS tests."
+              text={`${graded.length} SWE-bench-lite instance${graded.length === 1 ? "" : "s"}, each run end to end and graded against its own FAIL_TO_PASS and PASS_TO_PASS tests. Total spend: $${spent.toFixed(2)}. The other ${300 - graded.length} have not been attempted, which is why the table above is empty.`}
             />
           </dt>
-          <dd className="ok">1 / 1</dd>
+          <dd className="ok">{solved.length} / {graded.length}</dd>
         </div>
       </dl>
     </>

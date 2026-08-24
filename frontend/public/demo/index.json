@@ -1,0 +1,56 @@
+{
+  "runs": [
+    {
+      "file": "sympy__sympy-22714.json",
+      "id": "sympy__sympy-22714",
+      "title": "simpify gives `Imaginary coordinates are not permitted.` with evaluate(False)",
+      "repo": "sympy/sympy",
+      "difficulty": "<15 min fix",
+      "resolved": true,
+      "model": "claude-sonnet-5",
+      "costUsd": 0.136782,
+      "turns": 10,
+      "durationSeconds": 168.6,
+      "events": 33
+    },
+    {
+      "file": "sympy__sympy-24213.json",
+      "id": "sympy__sympy-24213",
+      "title": "collect_factor_and_dimension does not detect equivalent dimensions in addition",
+      "repo": "sympy/sympy",
+      "difficulty": "15 min - 1 hour",
+      "resolved": true,
+      "model": "claude-sonnet-5",
+      "costUsd": 0.086256,
+      "turns": 7,
+      "durationSeconds": 38.1,
+      "events": 23
+    },
+    {
+      "file": "sympy__sympy-18199.json",
+      "id": "sympy__sympy-18199",
+      "title": "nthroot_mod function misses one root of x = 0 mod p.",
+      "repo": "sympy/sympy",
+      "difficulty": "1-4 hours",
+      "resolved": false,
+      "model": "claude-sonnet-5",
+      "costUsd": 0.07085,
+      "turns": 6,
+      "durationSeconds": 54.4,
+      "events": 19
+    },
+    {
+      "file": "pallets__flask-4992.json",
+      "id": "pallets__flask-4992",
+      "title": "Add a file mode parameter to flask.Config.from_file()",
+      "repo": "pallets/flask",
+      "difficulty": null,
+      "resolved": true,
+      "model": "claude-sonnet-5",
+      "costUsd": 0.111472,
+      "turns": 8,
+      "durationSeconds": 30.2,
+      "events": 28
+    }
+  ]
+}

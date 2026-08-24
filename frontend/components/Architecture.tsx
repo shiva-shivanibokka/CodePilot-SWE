@@ -3,7 +3,7 @@ import InfoTip from "@/components/InfoTip";
 export function Architecture() {
   return (
     <>
-      <div className="panel-head">
+      <div>
         <p className="eyebrow">How it works</p>
         <h2>Same issue, two architectures</h2>
         <p className="lede">
@@ -14,7 +14,7 @@ export function Architecture() {
         </p>
       </div>
 
-      <div className="hunk">
+      <div className="rule">
         <span>@@ the two paths @@</span>
         <b>agentic vs. agentless</b>
       </div>
@@ -104,7 +104,7 @@ export function Architecture() {
         </div>
       </div>
 
-      <div className="hunk">
+      <div className="rule">
         <span>@@ the trust boundary @@</span>
         <b>why the workspace is an interface</b>
       </div>

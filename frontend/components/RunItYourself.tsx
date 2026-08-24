@@ -5,7 +5,7 @@ const REPO = "https://github.com/shiva-shivanibokka/Autonomous-SWE-Agent";
 export function RunItYourself() {
   return (
     <>
-      <div className="panel-head">
+      <div>
         <p className="eyebrow">Locally, with your own key</p>
         <h2>Run it yourself</h2>
         <p className="lede">
@@ -15,7 +15,7 @@ export function RunItYourself() {
         </p>
       </div>
 
-      <div className="hunk">
+      <div className="rule">
         <span>@@ without docker @@</span>
         <b>the fast path</b>
         <span>a temp checkout with its own virtualenv</span>
@@ -47,7 +47,7 @@ export function RunItYourself() {
         use Docker for anything else.
       </div>
 
-      <div className="hunk">
+      <div className="rule">
         <span>@@ with docker @@</span>
         <b>the isolated path</b>
         <span>one throwaway container per task</span>
@@ -63,7 +63,7 @@ export function RunItYourself() {
         <span className="p">$</span> docker-compose up
       </pre>
 
-      <div className="hunk">
+      <div className="rule">
         <span>@@ the full benchmark @@</span>
         <b>300 instances</b>
         <span>bring budget</span>

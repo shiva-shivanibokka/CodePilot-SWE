@@ -13,13 +13,13 @@ and compared with every token, turn and dollar accounted for.
 
 > ### This is a replay, not a live service
 >
-> The page above plays back **one real agent run**, captured with
-> `python -m eval.record_run` and committed to this repository. Every line of it
-> is measured: the model's own reasoning, the tool calls it chose, the token
+> The page above plays back **four real agent runs**, captured with
+> `python -m eval.record_run` and committed to this repository. Pick one and
+> watch it. Every line of them is measured: the model's own reasoning, the tool calls it chose, the token
 > counts and dollar cost the provider billed, the patch it produced, and the
 > result of running the benchmark's own tests against that patch afterwards.
 > Only the pacing is synthetic: the gaps where the model was thinking are
-> clamped, so a 30-second run replays in about 21.
+> clamped, so a run of a few minutes replays in about half of one.
 >
 > **There is no hosted backend.** A run needs several minutes, a checkout of a
 > third-party repository, and a shell to execute code that nobody has vetted.
@@ -33,28 +33,46 @@ and compared with every token, turn and dollar accounted for.
 
 ---
 
-## What the recorded run shows
+## What the recorded runs show
 
-One SWE-bench-lite instance, run for real and graded against its own tests.
+Four SWE-bench-lite instances, each run for real and graded against its own
+tests. Difficulty is **SWE-bench Verified's human annotation** — how long its
+annotators judged the issue would take an engineer — not anything estimated
+here. Instances outside Verified are shown unrated rather than guessed at.
 
-| | |
-|---|---|
-| Task | [`pallets__flask-4992`](https://github.com/pallets/flask) — *"Add a file mode parameter to `flask.Config.from_file()`"* |
-| Model | `anthropic/claude-sonnet-5` (BYOK) |
-| Result | **Resolved** — 1 FAIL_TO_PASS + 18 PASS_TO_PASS, `pytest` exit 0 |
-| Cost | **$0.1115** |
-| Turns | 8 |
-| Tokens | 48,228 |
-| Wall clock | 30s |
-| Patch | 43 lines, one file |
+| Difficulty | Instance | Result | Cost | Turns |
+|---|---|---|---|---|
+| `<15 min fix` | `sympy__sympy-22714` | **Resolved** | $0.137 | 10 |
+| `15 min – 1 hour` | `sympy__sympy-24213` | **Resolved** | $0.086 | 7 |
+| `1–4 hours` | `sympy__sympy-18199` | **Not resolved** | $0.071 | 6 |
+| unrated | `pallets__flask-4992` | **Resolved** | $0.111 | 8 |
 
-What makes this instance a fair test: the issue *proposes* `mode="b"`, but the API
-Flask actually shipped — and therefore the API the graded test calls — is
-`text=False`. An agent that implements what the issue asks for fails. This one
-read the surrounding code, chose `text: bool = True`, updated the docstring
-example from `toml` to `tomllib`, added the `versionchanged` note, then ran the
-suite, used `git stash` to confirm the remaining failures were pre-existing, and
-stopped. That is the whole run, and it is what the page replays.
+**3 of 4 resolved. $0.41 for the set.** Model: `claude-sonnet-5` throughout.
+
+### The two most interesting ones
+
+**`flask-4992` — where following the issue would have failed.** The issue
+proposes `mode="b"`. The API Flask actually shipped, and therefore the API the
+graded test calls, is `text=False`. An agent that implements what it was asked
+for fails this instance. This one read the surrounding code, chose
+`text: bool = True`, updated the docstring example from `toml` to `tomllib`,
+added the `versionchanged` note, then ran the suite and used `git stash` to
+confirm the remaining failures were pre-existing.
+
+**`sympy-18199` — where the agent's limit actually is.** The issue says
+`nthroot_mod` misses the root `x = 0` when `a % p == 0`. The agent implemented
+exactly that, in 16 lines, and it is a correct reading of the issue. The fix the
+maintainers shipped is 76 lines: it also adds `_nthroot_mod_composite`, support
+for **composite moduli** that the issue never mentions. The graded test
+exercises `solveset` over `Mod(x**3, 8)`, and 8 is composite — so the agent's
+patch cannot pass it.
+
+That failure is on the site, with its diff and its test output, and it was not
+re-run to get a better one. An agent that solves easy issues and visibly breaks
+on hard ones is a more useful artifact than four staged successes: "where does
+it break" is the first thing anyone reading this will want to know.
+
+## What it does
 
 ## What it does
 
@@ -82,8 +100,8 @@ Grounded in: [Anthropic's SWE-bench work](https://www.anthropic.com/engineering/
 | Verified | Not done |
 |---|---|
 | Both architectures implemented and runnable | **No full 300-instance benchmark has been run** — the results table is empty on purpose |
-| One real agent run recorded, **graded as resolved**, and published | The agentless arm has not been recorded end to end |
-| Runs end to end on a real SWE-bench-lite instance | In-harness grading is a capped proxy, not the official grader |
+| Four real agent runs recorded, graded, and published — 3 resolved, 1 not | The agentless arm has not been recorded end to end |
+| Difficulty labelled from SWE-bench Verified's human annotations | In-harness grading is a capped proxy, not the official grader |
 | Two workspace backends: Docker sandbox, and local (no Docker) | No integration tests for the Docker backend (Docker-gated) |
 | BYOK across four providers through one client | |
 | Hard timeouts, per-task isolation, secret scanning on recordings | |
@@ -226,6 +244,7 @@ these only appears when the thing actually executes:
 | Pytest summary parsed `"2 failed, 5 passed"` as **5 passed, 0 failed** | The agentless validator crowned patches that broke the tests |
 | Agentless asked for a whole rewritten file inside a JSON string | Any file over the token cap truncated → unparseable → candidate silently dropped |
 | Eval never applied the instance's `test_patch` | The graded tests did not exist in the checkout; both approaches would have reported 0% |
+| `FAIL_TO_PASS` ids passed to pytest positionally | django and sympy write bare test names, not node ids — pytest exits 4, indistinguishable from a failure. **191 of the 300 instances could only ever score zero** |
 | Agentless validated candidates against the **graded** tests | Marking its own homework |
 | Search index cached per task, built with the first call's `file_pattern` | Later searches silently answered from the wrong corpus |
 | Agent loop caught only `LLMError` | Any tool or sandbox failure escaped the generator, discarding the diff, cost and event log |
@@ -305,6 +324,9 @@ money to run.
   database.
 - **The agentless arm is unrecorded.** It runs, and its parts are tested, but no
   captured end-to-end run of it is published yet.
+- **Four instances is not a resolve rate.** Three of four resolved, but they were
+  chosen for having environments that build on a modern interpreter, which is
+  its own selection bias. Nothing here should be read as a score over 300.
 - **Single worker.** The API's task store is in-process. Scaling out needs Redis
   before raising the worker count.
 

@@ -13,7 +13,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const runPath = join(here, "..", "public", "demo", "run.json");
+const demoDir = join(here, "..", "public", "demo");
+const indexPath = join(demoDir, "index.json");
 
 const REQUIRED = [
   "recordedAt",
@@ -44,36 +45,52 @@ function fail(message) {
   process.exit(1);
 }
 
-if (!existsSync(runPath)) {
-  // Not an error: the site renders a "record one" state when no run exists.
-  console.log("validate-run: no recording committed yet — skipping.");
+if (!existsSync(indexPath)) {
+  // Not an error: the site renders a "record one" state when none exists.
+  console.log("validate-run: no recordings committed yet — skipping.");
   process.exit(0);
 }
 
-const raw = readFileSync(runPath, "utf8");
-
-for (const pattern of SECRETS) {
-  if (pattern.test(raw)) fail(`the recording contains something key-shaped (${pattern}).`);
+const index = JSON.parse(readFileSync(indexPath, "utf8"));
+if (!Array.isArray(index.runs) || index.runs.length === 0) {
+  fail("index.json lists no runs — the picker and the console would both be empty.");
 }
 
-let run;
-try {
-  run = JSON.parse(raw);
-} catch (error) {
-  fail(`run.json is not valid JSON: ${error.message}`);
+let totalKb = 0;
+for (const entry of index.runs) {
+  const path = join(demoDir, entry.file);
+  if (!existsSync(path)) fail(`index.json points at ${entry.file}, which is not committed.`);
+
+  const raw = readFileSync(path, "utf8");
+  totalKb += Buffer.byteLength(raw) / 1024;
+
+  for (const pattern of SECRETS) {
+    if (pattern.test(raw)) fail(`${entry.file} contains something key-shaped (${pattern}).`);
+  }
+
+  let run;
+  try {
+    run = JSON.parse(raw);
+  } catch (error) {
+    fail(`${entry.file} is not valid JSON: ${error.message}`);
+  }
+
+  const missing = REQUIRED.filter((key) => run[key] === undefined);
+  if (missing.length) fail(`${entry.file} is missing: ${missing.join(", ")}`);
+
+  if (!Array.isArray(run.events) || run.events.length === 0) {
+    fail(`${entry.file} has no events — the console would render an empty log.`);
+  }
+  if (run.task?.id !== entry.id) {
+    fail(`${entry.file} is listed as ${entry.id} but contains ${run.task?.id}.`);
+  }
 }
 
-const missing = REQUIRED.filter((key) => run[key] === undefined);
-if (missing.length) fail(`run.json is missing: ${missing.join(", ")}`);
+if (totalKb > 8192) fail(`recordings total ${totalKb.toFixed(0)} KB — too much to ship.`);
 
-if (!Array.isArray(run.events) || run.events.length === 0) {
-  fail("run.json has no events — the console would render an empty log.");
-}
-
-const sizeKb = Buffer.byteLength(raw) / 1024;
-if (sizeKb > 4096) fail(`run.json is ${sizeKb.toFixed(0)} KB — too large to ship to a browser.`);
-
+const solved = index.runs.filter((r) => r.resolved === true).length;
+const graded = index.runs.filter((r) => r.resolved !== null).length;
 console.log(
-  `validate-run: ok — ${run.events.length} events, ${run.turns} turns, ` +
-    `$${Number(run.costUsd).toFixed(4)}, ${sizeKb.toFixed(0)} KB.`,
+  `validate-run: ok — ${index.runs.length} recording(s), ${solved}/${graded} resolved, ` +
+    `${totalKb.toFixed(0)} KB total.`,
 );
