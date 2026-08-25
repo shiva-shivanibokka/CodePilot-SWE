@@ -252,3 +252,80 @@ class TestSearchReplacePatching:
         )
         assert patched is None
         assert "changes nothing" in reason
+
+
+class TestValidationBaseline:
+    """
+    A candidate is judged against the repository it landed in, not against a
+    clean suite.
+
+    SWE-bench checks out a commit years old and installs modern dependencies on
+    top, so a handful of unrelated tests are already red before the model does
+    anything. The gate used to demand `failed == 0`, which on such a checkout
+    rejects every candidate — correct ones included — and reports it as the
+    model having failed to produce a patch. That is exactly what happened on
+    pallets__flask-4992: four candidates generated, all four discarded, and no
+    recording written at all.
+    """
+
+    @staticmethod
+    def keeps(patched, baseline):
+        """The gate, as validate_candidate applies it."""
+        passed, failed, errors = patched
+        base_passed, base_failed, base_errors = baseline
+        return (
+            passed > 0
+            and failed <= base_failed
+            and errors <= base_errors
+            and passed >= base_passed
+        )
+
+    def test_pre_existing_failures_do_not_reject_a_good_patch(self):
+        # Two tests were already broken; the patch leaves them broken and
+        # breaks nothing else.
+        assert self.keeps((50, 2, 0), baseline=(50, 2, 0))
+
+    def test_a_patch_that_breaks_something_is_rejected(self):
+        assert not self.keeps((48, 4, 0), baseline=(50, 2, 0))
+
+    def test_a_patch_that_fixes_something_is_kept(self):
+        assert self.keeps((52, 0, 0), baseline=(50, 2, 0))
+
+    def test_a_patch_that_loses_passes_is_rejected(self):
+        # Same failure count, fewer passes: tests stopped being collected.
+        assert not self.keeps((40, 2, 0), baseline=(50, 2, 0))
+
+    def test_a_run_with_no_passing_tests_is_never_kept(self):
+        assert not self.keeps((0, 0, 0), baseline=(0, 0, 0))
+
+    def test_new_errors_are_rejected_even_when_failures_are_flat(self):
+        assert not self.keeps((50, 2, 1), baseline=(50, 2, 0))
+
+
+class TestTruncatedSampleRetry:
+    """
+    A reply cut off mid-JSON is paid for and then thrown away.
+
+    On sympy's `Point.__new__` two of every four samples ran past the cap. The
+    first attempt to fix it raised the cap, which changed nothing and cost more;
+    the second told the model to keep its search block short, which also changed
+    nothing. The response is long because the edit is in a long function, not
+    because the instruction was unclear — so the fix is to not lose the call.
+    """
+
+    class Resp:
+        def __init__(self, finish_reason):
+            self.finish_reason = finish_reason
+            self.text = ""
+
+    def test_truncation_is_reported_not_silently_dropped(self):
+        patched, reason = apply_search_replace("x = 1\n", self.Resp("length"))
+        assert patched is None
+        assert "token cap" in reason
+
+    def test_a_complete_reply_is_not_treated_as_truncated(self):
+        # Falls through to JSON parsing, which fails for its own reason —
+        # the point is that it is not short-circuited as a truncation.
+        patched, reason = apply_search_replace("x = 1\n", self.Resp("stop"))
+        assert patched is None
+        assert "token cap" not in reason

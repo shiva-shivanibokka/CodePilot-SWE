@@ -17,7 +17,9 @@ import type { AgentEvent } from "./types";
 export interface RecordedRun {
   recordedAt: string;
   backend: "local" | "docker";
-  approach: "agent" | "agentless";
+  approach: Approach;
+  /** Agentless only: how many candidate patches were sampled and tested. */
+  candidates?: number | null;
   provider: string;
   model: string;
   task: RunTask;
@@ -64,9 +66,14 @@ export interface Grading {
 }
 
 /** What the picker needs before any run is loaded. */
+/** The two architectures this project exists to compare. */
+export type Approach = "agent" | "agentless";
+
 export interface RunSummary {
   file: string;
+  /** Unique per recording: the same instance can be run by both arms. */
   id: string;
+  approach?: Approach;
   title: string;
   repo?: string;
   difficulty?: string | null;
@@ -169,6 +176,16 @@ export function difficultyRank(label?: string | null): 1 | 2 | 3 | 0 {
   if (label.startsWith("<15")) return 1;
   if (label.startsWith("15 min")) return 2;
   return 3;
+}
+
+/** The benchmark instance behind a run id, with the arm suffix taken off. */
+export function instanceOf(runId: string): string {
+  return runId.replace(/-agentless$/, "");
+}
+
+/** How the arm is named in the interface, and in the paper it comes from. */
+export function approachLabel(approach?: Approach): string {
+  return approach === "agentless" ? "agentless" : "agentic";
 }
 
 export function difficultyShort(label?: string | null): string {

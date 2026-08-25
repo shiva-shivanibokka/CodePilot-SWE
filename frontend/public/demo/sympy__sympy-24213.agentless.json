@@ -1,0 +1,189 @@
+{
+  "recordedAt": "2026-08-25T02:32:53.855111+00:00",
+  "backend": "local",
+  "approach": "agentless",
+  "provider": "anthropic",
+  "model": "claude-sonnet-5",
+  "task": {
+    "kind": "swebench",
+    "id": "sympy__sympy-24213",
+    "title": "collect_factor_and_dimension does not detect equivalent dimensions in addition",
+    "repo": "sympy/sympy",
+    "difficulty": "15 min - 1 hour",
+    "url": "https://github.com/sympy/sympy",
+    "repoUrl": "https://github.com/sympy/sympy.git",
+    "baseCommit": "e8c22f6eac7314be8d92590bfff92ced79ee03e2",
+    "text": "collect_factor_and_dimension does not detect equivalent dimensions in addition\nCode to reproduce:\r\n```python\r\nfrom sympy.physics import units\r\nfrom sympy.physics.units.systems.si import SI\r\n\r\nv1 = units.Quantity('v1')\r\nSI.set_quantity_dimension(v1, units.velocity)\r\nSI.set_quantity_scale_factor(v1, 2 * units.meter / units.second)\r\n\r\na1 = units.Quantity('a1')\r\nSI.set_quantity_dimension(a1, units.acceleration)\r\nSI.set_quantity_scale_factor(a1, -9.8 * units.meter / units.second**2)\r\n\r\nt1 = units.Quantity('t1')\r\nSI.set_quantity_dimension(t1, units.time)\r\nSI.set_quantity_scale_factor(t1, 5 * units.second)\r\n\r\nexpr1 = a1*t1 + v1\r\nSI._collect_factor_and_dimension(expr1)\r\n```\r\nResults in:\r\n```\r\nTraceback (most recent call last):\r\n  File \"<stdin>\", line 1, in <module>\r\n  File \"C:\\Python\\Python310\\lib\\site-packages\\sympy\\physics\\units\\unitsystem.py\", line 179, in _collect_factor_and_dimension\r\n    raise ValueError(\r\nValueError: Dimension of \"v1\" is Dimension(velocity), but it should be Dimension(acceleration*time)\r\n```\n",
+    "goldPatchLines": 2,
+    "agentPatchLines": 2
+  },
+  "setup": {
+    "command": "python -m pip install -q mpmath setuptools \"pytest>=7.4,<8\"",
+    "exitCode": 0
+  },
+  "stopReason": "done",
+  "turns": 3,
+  "inputTokens": 24552,
+  "outputTokens": 1411,
+  "costUsd": 0.063214,
+  "durationSeconds": 34.1,
+  "conclusion": "Selected candidate #0 in /repo/sympy/physics/units/unitsystem.py: it passes the tests the repository already had (71 passed, 0 failed).",
+  "diff": "diff --git a/sympy/physics/units/unitsystem.py b/sympy/physics/units/unitsystem.py\nindex a436880c4b..5705c821c2 100644\n--- a/sympy/physics/units/unitsystem.py\n+++ b/sympy/physics/units/unitsystem.py\n@@ -175,7 +175,7 @@ def _collect_factor_and_dimension(self, expr):\n             for addend in expr.args[1:]:\n                 addend_factor, addend_dim = \\\n                     self._collect_factor_and_dimension(addend)\n-                if dim != addend_dim:\n+                if not self.get_dimension_system().equivalent_dims(dim, addend_dim):\n                     raise ValueError(\n                         'Dimension of \"{}\" is {}, '\n                         'but it should be {}'.format(\n",
+  "candidates": 4,
+  "candidatesTested": 1,
+  "grading": {
+    "graded": true,
+    "resolved": true,
+    "command": "python -m pytest sympy/physics/units/tests/test_quantities.py -k \"test_issue_24211 or test_str_repr or test_eq or test_convert_to or test_Quantity_definition or test_abbrev or test_print or test_Quantity_eq or test_add_sub or test_quantity_abs or test_check_unit_consistency or test_mul_div or test_units or test_issue_quart or test_issue_5565 or test_find_unit or test_Quantity_derivative or test_quantity_postprocessing or test_factor_and_dimension or test_dimensional_expr_of_derivative\" -x -q -W ignore::DeprecationWarning --tb=short 2>&1",
+    "exitCode": 0,
+    "timedOut": false,
+    "failToPassCount": 1,
+    "passToPassCount": 31,
+    "testsRun": 20,
+    "output": "..................x..                                                    [100%]\n20 passed, 13 deselected, 1 xfailed in 0.39s"
+  },
+  "events": [
+    {
+      "type": "thought",
+      "turn": 1,
+      "delayMs": 120,
+      "data": {
+        "text": "Phase 1 - localize. No tools and no shell: a single pass over a map of the repository, naming the files the issue points at."
+      }
+    },
+    {
+      "type": "tool_call",
+      "turn": 1,
+      "delayMs": 2200,
+      "data": {
+        "tool_name": "localize",
+        "input": {
+          "query": "/repo/sympy/physics/units/unitsystem.py"
+        }
+      }
+    },
+    {
+      "type": "tool_result",
+      "turn": 1,
+      "delayMs": 120,
+      "data": {
+        "tool_name": "localize",
+        "result": "/repo/sympy/physics/units/unitsystem.py :: _collect_factor_and_dimension"
+      }
+    },
+    {
+      "type": "cost_update",
+      "turn": 1,
+      "delayMs": 120,
+      "data": {
+        "total_cost_usd": 0.02417,
+        "total_input_tokens": 11008,
+        "total_output_tokens": 215
+      }
+    },
+    {
+      "type": "thought",
+      "turn": 2,
+      "delayMs": 120,
+      "data": {
+        "text": "Phase 2 - repair. Sample 4 independent patches at temperature 1. None of them is chosen here; the tests choose."
+      }
+    },
+    {
+      "type": "tool_call",
+      "turn": 2,
+      "delayMs": 2200,
+      "data": {
+        "tool_name": "candidate",
+        "input": {
+          "path": "#0 /repo/sympy/physics/units/unitsystem.py"
+        }
+      }
+    },
+    {
+      "type": "tool_call",
+      "turn": 2,
+      "delayMs": 120,
+      "data": {
+        "tool_name": "candidate",
+        "input": {
+          "path": "#1 /repo/sympy/physics/units/unitsystem.py"
+        }
+      }
+    },
+    {
+      "type": "tool_call",
+      "turn": 2,
+      "delayMs": 120,
+      "data": {
+        "tool_name": "candidate",
+        "input": {
+          "path": "#2 /repo/sympy/physics/units/unitsystem.py"
+        }
+      }
+    },
+    {
+      "type": "tool_call",
+      "turn": 2,
+      "delayMs": 120,
+      "data": {
+        "tool_name": "candidate",
+        "input": {
+          "path": "#3 /repo/sympy/physics/units/unitsystem.py"
+        }
+      }
+    },
+    {
+      "type": "cost_update",
+      "turn": 2,
+      "delayMs": 120,
+      "data": {
+        "total_cost_usd": 0.06321,
+        "total_input_tokens": 24552,
+        "total_output_tokens": 1411
+      }
+    },
+    {
+      "type": "thought",
+      "turn": 3,
+      "delayMs": 120,
+      "data": {
+        "text": "Phase 3 - validate. Run each candidate against the tests the repository already had and keep the one that survives. The graded tests are not in the checkout yet, so nothing here marks its own homework."
+      }
+    },
+    {
+      "type": "tool_result",
+      "turn": 3,
+      "delayMs": 2200,
+      "data": {
+        "tool_name": "baseline",
+        "result": "before any patch: 71 passed, 0 failed, 0 errors - this is what a candidate has to beat"
+      }
+    },
+    {
+      "type": "tool_result",
+      "turn": 3,
+      "delayMs": 1238,
+      "data": {
+        "tool_name": "validate",
+        "result": "#0 /repo/sympy/physics/units/unitsystem.py: 71 passed, 0 failed, 0 errors in 1.2s (kept)"
+      }
+    },
+    {
+      "type": "done",
+      "turn": 3,
+      "delayMs": 120,
+      "data": {
+        "stop_reason": "done",
+        "conclusion": "Selected candidate #0 in /repo/sympy/physics/units/unitsystem.py: it passes the tests the repository already had (71 passed, 0 failed).",
+        "turns": 3,
+        "total_cost_usd": 0.06321,
+        "total_input_tokens": 24552,
+        "total_output_tokens": 1411,
+        "duration_seconds": 34.1,
+        "candidates": 4,
+        "validated": 1
+      }
+    }
+  ]
+}

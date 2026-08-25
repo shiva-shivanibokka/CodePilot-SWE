@@ -57,6 +57,7 @@ if (!Array.isArray(index.runs) || index.runs.length === 0) {
 }
 
 let totalKb = 0;
+const seen = new Set();
 for (const entry of index.runs) {
   const path = join(demoDir, entry.file);
   if (!existsSync(path)) fail(`index.json points at ${entry.file}, which is not committed.`);
@@ -81,9 +82,14 @@ for (const entry of index.runs) {
   if (!Array.isArray(run.events) || run.events.length === 0) {
     fail(`${entry.file} has no events — the console would render an empty log.`);
   }
-  if (run.task?.id !== entry.id) {
-    fail(`${entry.file} is listed as ${entry.id} but contains ${run.task?.id}.`);
+  // A manifest id carries the arm, because the same instance can be recorded
+  // by both and a deep link has to address one of them.
+  const expected = run.task?.id + (run.approach === "agentless" ? "-agentless" : "");
+  if (expected !== entry.id) {
+    fail(`${entry.file} is listed as ${entry.id} but contains ${expected}.`);
   }
+  if (seen.has(entry.id)) fail(`two recordings claim the id ${entry.id}.`);
+  seen.add(entry.id);
 }
 
 if (totalKb > 8192) fail(`recordings total ${totalKb.toFixed(0)} KB — too much to ship.`);

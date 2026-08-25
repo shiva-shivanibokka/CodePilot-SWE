@@ -283,6 +283,14 @@ h3 {
   background: var(--card);
   border-color: var(--line);
 }
+/* Which architecture produced the run. Outlined rather than filled: it is a
+   label, not a verdict, and must not compete with solved/failed beside it. */
+.badge-arm {
+  color: var(--key);
+  background: transparent;
+  border-color: var(--key-dim);
+  border-style: dashed;
+}
 .badge-dot::before {
   content: "";
   width: 5px;
@@ -507,6 +515,21 @@ h3 {
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
+/* Scoped to the table on purpose: bare .ok / .bad / .muted would be three more
+   names competing across the whole sheet, which is how the last collision here
+   started. */
+.bench .ok {
+  color: var(--ok);
+  font-weight: 600;
+}
+.bench .bad {
+  color: var(--bad);
+  font-weight: 600;
+}
+.bench .muted {
+  color: var(--faint);
+}
+
 .fact dd.ok {
   color: var(--ok);
 }

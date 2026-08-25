@@ -1,7 +1,13 @@
 "use client";
 
 import InfoTip from "@/components/InfoTip";
-import { difficultyRank, difficultyShort, type RunSummary } from "@/lib/replay";
+import {
+  approachLabel,
+  difficultyRank,
+  difficultyShort,
+  instanceOf,
+  type RunSummary,
+} from "@/lib/replay";
 
 /**
  * Choose which recorded run to watch.
@@ -26,6 +32,8 @@ export default function RunPicker({
 
   const resolved = runs.filter((r) => r.resolved === true).length;
   const graded = runs.filter((r) => r.resolved !== null).length;
+  // The arm badge is only information when both arms are present.
+  const bothArms = new Set(runs.map((r) => r.approach ?? "agent")).size > 1;
 
   return (
     <>
@@ -64,8 +72,11 @@ export default function RunPicker({
                 >
                   {run.resolved === null ? "—" : run.resolved ? "solved" : "failed"}
                 </span>
+                {bothArms && (
+                  <span className="badge badge-arm">{approachLabel(run.approach)}</span>
+                )}
               </span>
-              <span className="name">{run.id}</span>
+              <span className="name">{instanceOf(run.id)}</span>
               <span className="title">{run.title}</span>
               <span className="foot">
                 <span>${run.costUsd.toFixed(3)}</span>

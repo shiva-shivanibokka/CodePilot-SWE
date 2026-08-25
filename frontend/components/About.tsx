@@ -1,7 +1,7 @@
 "use client";
 
 import InfoTip from "@/components/InfoTip";
-import type { RunSummary } from "@/lib/replay";
+import { instanceOf, type RunSummary } from "@/lib/replay";
 
 /**
  * What this is, and what the runs on the next tab actually demonstrate.
@@ -15,6 +15,12 @@ export function About({ runs = [] }: { runs?: RunSummary[] }) {
   const solved = graded.filter((r) => r.resolved);
   const spent = runs.reduce((total, r) => total + r.costUsd, 0);
   const hardest = graded.find((r) => r.difficulty?.startsWith("1-4"));
+  const pipeline = runs.filter((r) => r.approach === "agentless");
+  const loop = runs.filter((r) => (r.approach ?? "agent") === "agent");
+  // Instances, not recordings: two arms on one issue is one issue attempted,
+  // and counting recordings here would claim twice the benchmark coverage
+  // that actually exists.
+  const instances = new Set(graded.map((r) => instanceOf(r.id))).size;
 
   return (
     <>
@@ -31,7 +37,8 @@ export function About({ runs = [] }: { runs?: RunSummary[] }) {
         <p className="lede">
           This repository implements an agent that does that, twice over — a free-form loop that
           drives its own tools, and a fixed pipeline that uses none — so the two architectures can
-          be run on identical inputs and compared. Everything is built from raw API calls rather
+          be run on identical inputs and compared — which, on the recordings here, they have
+          been. Everything is built from raw API calls rather
           than a framework, because the parts a framework hides are the parts worth showing.
         </p>
       </div>
@@ -39,9 +46,9 @@ export function About({ runs = [] }: { runs?: RunSummary[] }) {
       <div className="rule">
         <span>@@ what the demo shows @@</span>
         <b>
-          {solved.length} of {graded.length} resolved
+          {solved.length} of {graded.length} runs resolved
         </b>
-        <span>for ${spent.toFixed(2)} in total</span>
+        <span>across {instances} issues, for ${spent.toFixed(2)} in total</span>
       </div>
 
       <div className="cols">
@@ -100,10 +107,10 @@ export function About({ runs = [] }: { runs?: RunSummary[] }) {
             Not a resolve rate
             <InfoTip
               label="why this is not a resolve rate"
-              text="Four instances is not a score over 300, and they were chosen for having environments that still build on a modern interpreter — which is its own selection bias. The benchmark table is deliberately empty rather than extrapolated."
+              text="A handful of instances is not a score over 300, and they were chosen for having environments that still build on a modern interpreter — which is its own selection bias. Both arms running the same issue is still one issue attempted, not two. The benchmark table is deliberately empty rather than extrapolated."
             />
           </dt>
-          <dd className="small">{graded.length} of 300</dd>
+          <dd className="small">{instances} of 300</dd>
         </div>
         <div className="fact">
           <dt>
@@ -127,13 +134,19 @@ export function About({ runs = [] }: { runs?: RunSummary[] }) {
         </div>
         <div className="fact">
           <dt>
-            Agentless unrecorded
+            {pipeline.length ? "Four issues, not a verdict" : "Agentless unrecorded"}
             <InfoTip
               label="the agentless arm"
-              text="The three-phase pipeline runs and its parts are unit-tested, but no end-to-end recording of it is published, so the head-to-head comparison this project is built for has not actually been performed yet."
+              text={
+                pipeline.length
+                  ? `Both architectures have now been recorded end to end on the same issues: ${loop.length} runs of the tool-driven loop and ${pipeline.length} of the three-phase pipeline. Enough to show how the two behave on a given issue; nowhere near enough to say which is better. That claim needs the full 300.`
+                  : "The three-phase pipeline runs and its parts are unit-tested, but no end-to-end recording of it is published, so the head-to-head comparison this project is built for has not actually been performed yet."
+              }
             />
           </dt>
-          <dd className="small">Not yet run</dd>
+          <dd className="small">
+            {pipeline.length ? `${loop.length} vs ${pipeline.length} runs` : "Not yet run"}
+          </dd>
         </div>
       </dl>
 

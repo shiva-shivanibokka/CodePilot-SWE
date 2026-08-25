@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import InfoTip from "@/components/InfoTip";
 import { fetchBenchmark } from "@/lib/api";
-import type { RunSummary } from "@/lib/replay";
+import { difficultyRank, difficultyShort, instanceOf, type RunSummary } from "@/lib/replay";
 import type { BenchmarkSummary } from "@/lib/types";
 
 type State = { status: "loading" | "empty" | "ready"; summaries: BenchmarkSummary[] };
@@ -28,6 +28,7 @@ export function Benchmark({ runs = [] }: { runs?: RunSummary[] }) {
   const graded = runs.filter((r) => r.resolved !== null);
   const solved = graded.filter((r) => r.resolved);
   const spent = runs.reduce((total, r) => total + r.costUsd, 0);
+  const pairs = pairByInstance(runs);
 
   return (
     <>
@@ -80,7 +81,8 @@ export function Benchmark({ runs = [] }: { runs?: RunSummary[] }) {
               <>
                 No full benchmark run has been published, so this table is empty rather than
                 estimated. The harness is here and works — running it end to end takes a paid key
-                and a few hours of compute. One instance has been run for real: see{" "}
+                and a few hours of compute. {graded.length} instance
+                {graded.length === 1 ? " has" : "s have"} been run for real: see{" "}
                 <a className="link" href="#run">
                   Watch it work
                 </a>
@@ -89,6 +91,52 @@ export function Benchmark({ runs = [] }: { runs?: RunSummary[] }) {
             )}
           </div>
         </div>
+      )}
+
+      {pairs.length > 0 && (
+        <>
+          <div className="rule">
+            <span>@@ recorded head to head @@</span>
+            <b>
+              {pairs.length} instance{pairs.length === 1 ? "" : "s"}, both arms
+            </b>
+            <span>same issue, same model, same machine</span>
+          </div>
+
+          <div className="bench">
+            <table>
+              <thead>
+                <tr>
+                  <th>Instance</th>
+                  <th>Rated</th>
+                  <th>Agentic</th>
+                  <th>Agentless</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pairs.map(({ id, difficulty, agent, agentless }) => (
+                  <tr key={id}>
+                    <td className="metric">{id}</td>
+                    <td className="val">{difficultyShort(difficulty)}</td>
+                    <td className="val">
+                      <Arm run={agent} />
+                    </td>
+                    <td className="val">
+                      <Arm run={agentless} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="lede">
+            Four instances is not a resolve rate, and this table is not one. What it does show is
+            the trade the two architectures actually make on the same issue: the pipeline pays for
+            every candidate it samples whether or not it uses them, while the loop pays only for
+            the turns it takes. Which comes out cheaper is not fixed — it depends on the issue.
+          </p>
+        </>
       )}
 
       <div className="rule">
@@ -140,6 +188,49 @@ export function Benchmark({ runs = [] }: { runs?: RunSummary[] }) {
       </dl>
     </>
   );
+}
+
+/**
+ * One arm's outcome on one instance.
+ *
+ * A blank cell means that arm has not been recorded on this instance, which is
+ * different from having been recorded and failed — so the two never render the
+ * same way.
+ */
+function Arm({ run }: { run?: RunSummary }) {
+  if (!run) return <span className="muted">not run</span>;
+  return (
+    <>
+      <span className={run.resolved === null ? "" : run.resolved ? "ok" : "bad"}>
+        {run.resolved === null ? "ungraded" : run.resolved ? "solved" : "failed"}
+      </span>{" "}
+      <span className="muted">
+        ${run.costUsd.toFixed(3)} · {Math.round(run.durationSeconds)}s
+      </span>
+    </>
+  );
+}
+
+interface Pair {
+  id: string;
+  difficulty?: string | null;
+  agent?: RunSummary;
+  agentless?: RunSummary;
+}
+
+/** Group the recordings by benchmark instance, easiest first. */
+function pairByInstance(runs: RunSummary[]): Pair[] {
+  const byInstance = new Map<string, Pair>();
+  for (const run of runs) {
+    const id = instanceOf(run.id);
+    const pair = byInstance.get(id) ?? { id, difficulty: run.difficulty };
+    pair[run.approach === "agentless" ? "agentless" : "agent"] = run;
+    byInstance.set(id, pair);
+  }
+  // Only rows where both arms ran say anything about the comparison.
+  return [...byInstance.values()]
+    .filter((p) => p.agent && p.agentless)
+    .sort((a, b) => difficultyRank(a.difficulty) - difficultyRank(b.difficulty));
 }
 
 function Row({ label, a, b }: { label: string; a: string; b: string }) {

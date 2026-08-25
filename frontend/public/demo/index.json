@@ -3,6 +3,7 @@
     {
       "file": "sympy__sympy-22714.json",
       "id": "sympy__sympy-22714",
+      "approach": "agent",
       "title": "simpify gives `Imaginary coordinates are not permitted.` with evaluate(False)",
       "repo": "sympy/sympy",
       "difficulty": "<15 min fix",
@@ -14,8 +15,37 @@
       "events": 33
     },
     {
+      "file": "sympy__sympy-22714.agentless.json",
+      "id": "sympy__sympy-22714-agentless",
+      "approach": "agentless",
+      "title": "simpify gives `Imaginary coordinates are not permitted.` with evaluate(False)",
+      "repo": "sympy/sympy",
+      "difficulty": "<15 min fix",
+      "resolved": true,
+      "model": "claude-sonnet-5",
+      "costUsd": 0.307078,
+      "turns": 3,
+      "durationSeconds": 262.1,
+      "events": 14
+    },
+    {
+      "file": "sympy__sympy-24213.agentless.json",
+      "id": "sympy__sympy-24213-agentless",
+      "approach": "agentless",
+      "title": "collect_factor_and_dimension does not detect equivalent dimensions in addition",
+      "repo": "sympy/sympy",
+      "difficulty": "15 min - 1 hour",
+      "resolved": true,
+      "model": "claude-sonnet-5",
+      "costUsd": 0.063214,
+      "turns": 3,
+      "durationSeconds": 34.1,
+      "events": 14
+    },
+    {
       "file": "sympy__sympy-24213.json",
       "id": "sympy__sympy-24213",
+      "approach": "agent",
       "title": "collect_factor_and_dimension does not detect equivalent dimensions in addition",
       "repo": "sympy/sympy",
       "difficulty": "15 min - 1 hour",
@@ -29,6 +59,7 @@
     {
       "file": "sympy__sympy-18199.json",
       "id": "sympy__sympy-18199",
+      "approach": "agent",
       "title": "nthroot_mod function misses one root of x = 0 mod p.",
       "repo": "sympy/sympy",
       "difficulty": "1-4 hours",
@@ -40,8 +71,37 @@
       "events": 19
     },
     {
+      "file": "sympy__sympy-18199.agentless.json",
+      "id": "sympy__sympy-18199-agentless",
+      "approach": "agentless",
+      "title": "nthroot_mod function misses one root of x = 0 mod p.",
+      "repo": "sympy/sympy",
+      "difficulty": "1-4 hours",
+      "resolved": false,
+      "model": "claude-sonnet-5",
+      "costUsd": 0.189562,
+      "turns": 3,
+      "durationSeconds": 130.8,
+      "events": 14
+    },
+    {
+      "file": "pallets__flask-4992.agentless.json",
+      "id": "pallets__flask-4992-agentless",
+      "approach": "agentless",
+      "title": "Add a file mode parameter to flask.Config.from_file()",
+      "repo": "pallets/flask",
+      "difficulty": null,
+      "resolved": false,
+      "model": "claude-sonnet-5",
+      "costUsd": 0.09067,
+      "turns": 3,
+      "durationSeconds": 33.5,
+      "events": 14
+    },
+    {
       "file": "pallets__flask-4992.json",
       "id": "pallets__flask-4992",
+      "approach": "agent",
       "title": "Add a file mode parameter to flask.Config.from_file()",
       "repo": "pallets/flask",
       "difficulty": null,

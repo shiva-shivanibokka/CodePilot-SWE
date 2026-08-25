@@ -17,7 +17,7 @@ to select the best one, achieving 32% on SWE-bench Lite at $0.70/issue.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from agent.llm import LLMConfig, complete, extract_json
 from agentless.localize import LocalizationResult
@@ -27,6 +27,8 @@ from sandbox.workspace import Workspace
 tracer = get_tracer(__name__)
 
 NUM_SAMPLES = int(os.getenv("AGENTLESS_NUM_SAMPLES", "10"))
+# Room for one search/replace pair. Doubled once on a reply that runs out.
+SAMPLE_MAX_TOKENS = int(os.getenv("AGENTLESS_SAMPLE_MAX_TOKENS", "4096"))
 
 
 @dataclass
@@ -63,6 +65,11 @@ class RepairResult:
     """Output of the repair phase."""
 
     candidates: list[PatchCandidate]
+    # Why each discarded sample was discarded. A sample that cannot be parsed
+    # into an edit is paid for and then thrown away, so dropping the reason on
+    # the floor hides both a cost and a prompt problem — and this phase already
+    # had one bug of exactly that shape.
+    rejected: list[str] = field(default_factory=list)
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     total_cost_usd: float = 0.0
@@ -96,6 +103,7 @@ def repair(
     with tracer.start_as_current_span("agentless.repair"):
         candidates: list[PatchCandidate] = []
         rejected: list[str] = []
+        retried = 0
         total_in_tok = 0
         total_out_tok = 0
         total_cost = 0.0
@@ -108,6 +116,22 @@ def repair(
                 {"file": f, "function_name": None, "class_name": None, "reason": ""}
                 for f in localization.suspect_files[:2]
             ]
+
+        # Localization routinely names the same function twice - once per
+        # reason it found it - and each duplicate would otherwise be sent the
+        # same file, the same prompt and half the sample budget. The samples
+        # are paid for either way; spending them on one place twice buys
+        # nothing that spending them on one place once does not.
+        locations = list(
+            {
+                (
+                    spot.get("file", ""),
+                    spot.get("class_name") or "",
+                    spot.get("function_name") or "",
+                ): spot
+                for spot in locations
+            }.values()
+        )
 
         for loc in locations:
             filepath = loc.get("file", "")
@@ -154,7 +178,12 @@ Respond with a JSON object:
 }}
 
 "search" must appear EXACTLY ONCE in the file. If the lines you want are not
-unique, include more surrounding lines until they are.
+unique, add surrounding lines one at a time until they are — and stop there.
+
+Keep "search" as short as it can be while staying unique. A handful of lines is
+normal; a whole function is not. Copying a long block wastes the response on
+lines you are not changing, and a reply that runs out of room mid-JSON is
+discarded entirely.
 
 Return ONLY the JSON object."""
 
@@ -162,16 +191,35 @@ Return ONLY the JSON object."""
             samples_per_location = max(1, num_samples // len(locations))
 
             for sample_idx in range(samples_per_location):
+                temperature = 1.0 if sample_idx > 0 else 0.2
                 resp = complete(
                     llm,
                     [{"role": "user", "content": prompt}],
-                    temperature=1.0 if sample_idx > 0 else 0.2,
-                    max_tokens=2048,
+                    temperature=temperature,
+                    max_tokens=SAMPLE_MAX_TOKENS,
                 )
 
                 total_in_tok += resp.input_tokens
                 total_out_tok += resp.output_tokens
                 total_cost += resp.cost_usd
+
+                # A reply cut off mid-JSON is unusable, and was paid for in
+                # full. Asking again with room to finish costs one more call;
+                # discarding it costs the call that was already made and buys
+                # nothing. Instructing the model to be brief did not stop this
+                # on long functions - it is the response that is long, not the
+                # prompt that is unclear.
+                if resp.finish_reason == "length":
+                    resp = complete(
+                        llm,
+                        [{"role": "user", "content": prompt}],
+                        temperature=temperature,
+                        max_tokens=SAMPLE_MAX_TOKENS * 2,
+                    )
+                    total_in_tok += resp.input_tokens
+                    total_out_tok += resp.output_tokens
+                    total_cost += resp.cost_usd
+                    retried += 1
 
                 patched, problem = apply_search_replace(file_content, resp)
                 if patched is None:
@@ -191,12 +239,19 @@ Return ONLY the JSON object."""
                     )
                 )
 
-        if rejected and not candidates:
-            # Zero candidates is a result the caller has to be able to explain.
-            print(f"[agentless] every sample was rejected: {rejected[:5]}")
+        if retried:
+            print(f"[agentless] {retried} sample(s) re-asked after running out of room")
+
+        if rejected:
+            # Reported whether some survived or none did: a run that quietly
+            # discards half its samples looks identical to one that discards
+            # none, and they are not the same run.
+            scope = "every sample" if not candidates else f"{len(rejected)} of the samples"
+            print(f"[agentless] {scope} rejected: {rejected[:5]}")
 
         return RepairResult(
             candidates=candidates,
+            rejected=rejected,
             total_input_tokens=total_in_tok,
             total_output_tokens=total_out_tok,
             total_cost_usd=total_cost,

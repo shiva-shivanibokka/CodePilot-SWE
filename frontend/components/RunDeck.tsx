@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import InfoTip from "@/components/InfoTip";
 import RunPicker from "@/components/RunPicker";
 import {
+  approachLabel,
   difficultyShort,
   formatDuration,
   formatRecordedAt,
@@ -86,10 +87,14 @@ export default function RunDeck({
   }, []);
 
   const changed = run?.task.agentPatchLines;
+  const agentless = run?.approach === "agentless";
 
   const handleEvent = useCallback((e: AgentEvent) => {
     const turn = e.turn ?? 0;
-    const gutter = turn ? `T${turn}` : "";
+    // The pipeline has three phases where the loop has turns, so the gutter
+    // says which of the two you are reading rather than implying turns exist
+    // on a side that never had any.
+    const gutter = turn ? `${agentless ? "P" : "T"}${turn}` : "";
     const d = (e.data ?? {}) as Record<string, unknown>;
     if (turn) setCost((c) => ({ ...c, turns: Math.max(c.turns, turn) }));
 
@@ -139,7 +144,9 @@ export default function RunDeck({
             // headers and context too, so a one-line edit reported as 13.
             // Recordings made before that distinction existed carry only the
             // latter, so fall back to the count measured off the diff itself.
-            body: `● agent stopped: ${d.stop_reason} · ${d.turns ?? "?"} turns · ${d.changed_lines ?? changed ?? d.diff_lines ?? "?"} lines changed`,
+            body: agentless
+              ? `● pipeline finished: ${d.stop_reason} · ${d.candidates ?? "?"} candidates sampled, ${d.validated ?? "?"} tested · ${d.changed_lines ?? changed ?? "?"} lines changed`
+              : `● agent stopped: ${d.stop_reason} · ${d.turns ?? "?"} turns · ${d.changed_lines ?? changed ?? d.diff_lines ?? "?"} lines changed`,
           },
         ]);
         break;
@@ -148,12 +155,18 @@ export default function RunDeck({
         setLines((p) => [...p, { kind: "error", gutter: "", body: `✕ ${d.error ?? "error"}` }]);
         break;
     }
-  }, [changed]);
+  }, [changed, agentless]);
 
   async function play() {
     if (!run) return;
     stopRef.current = false;
-    setLines([{ kind: "info", gutter: "", body: `$ resolve ${run.task.id} — ${run.provider}/${run.model}` }]);
+    setLines([
+      {
+        kind: "info",
+        gutter: "",
+        body: `$ resolve ${run.task.id} --${approachLabel(run.approach)} — ${run.provider}/${run.model}`,
+      },
+    ]);
     setCost(EMPTY);
     setFinished(false);
     setPlaying(true);

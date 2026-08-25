@@ -1,6 +1,6 @@
 "use client";
 
-import type { RunSummary } from "@/lib/replay";
+import { approachLabel, instanceOf, type RunSummary } from "@/lib/replay";
 
 const REPO = "https://github.com/shiva-shivanibokka/Autonomous-SWE-Agent";
 
@@ -86,7 +86,10 @@ export default function Rail({
           </span>
           <div className="rail-meta" style={{ marginTop: 11 }}>
             <span>
-              instance <b>{run.id.split("__").pop()}</b>
+              instance <b>{instanceOf(run.id).split("__").pop()}</b>
+            </span>
+            <span>
+              approach <b>{approachLabel(run.approach)}</b>
             </span>
             <span>
               repo <b>{run.repo ?? "—"}</b>

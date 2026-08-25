@@ -13,9 +13,9 @@ and compared with every token, turn and dollar accounted for.
 
 > ### This is a replay, not a live service
 >
-> The page above plays back **four real agent runs**, captured with
-> `python -m eval.record_run` and committed to this repository. Pick one and
-> watch it. Every line of them is measured: the model's own reasoning, the tool calls it chose, the token
+> The page above plays back **eight real runs** — both architectures on the
+> same four issues — captured with `python -m eval.record_run` and committed to
+> this repository. Pick one and watch it. Every line of them is measured: the model's own reasoning, the tool calls it chose, the token
 > counts and dollar cost the provider billed, the patch it produced, and the
 > result of running the benchmark's own tests against that patch afterwards.
 > Only the pacing is synthetic: the gaps where the model was thinking are
@@ -33,56 +33,63 @@ and compared with every token, turn and dollar accounted for.
 
 The site has five sections: **What this is** (the project and, more usefully,
 what the recordings do *not* support), **Watch it work** (pick a run and watch
-it, with its patch and grading beside the log), **Benchmark**, **Architecture**,
-and **Run it yourself**.
+it, with its patch and grading beside the log), **Benchmark** (including the
+recorded head-to-head between the two architectures), **Architecture**, and
+**Run it yourself**.
 
 ---
 
 ## What the recorded runs show
 
-Four SWE-bench-lite instances, each run for real and graded against its own
-tests. Difficulty is **SWE-bench Verified's human annotation** — how long its
-annotators judged the issue would take an engineer — not anything estimated
-here. Instances outside Verified are shown unrated rather than guessed at.
+Four SWE-bench-lite instances, each run end to end by **both** architectures and
+graded against its own tests. Difficulty is **SWE-bench Verified's human
+annotation** — how long its annotators judged the issue would take an engineer —
+not anything estimated here. Instances outside Verified are shown unrated rather
+than guessed at.
 
-| Difficulty | Instance | Result | Cost | Turns |
-|---|---|---|---|---|
-| `<15 min fix` | `sympy__sympy-22714` | **Resolved** | $0.137 | 10 |
-| `15 min – 1 hour` | `sympy__sympy-24213` | **Resolved** | $0.086 | 7 |
-| `1–4 hours` | `sympy__sympy-18199` | **Not resolved** | $0.071 | 6 |
-| unrated | `pallets__flask-4992` | **Resolved** | $0.111 | 8 |
+| Difficulty | Instance | Agentic loop | Agentless pipeline |
+|---|---|---|---|
+| `<15 min fix` | `sympy__sympy-22714` | **Resolved** · $0.137 · 169s | **Resolved** · $0.307 · 262s |
+| `15 min – 1 hour` | `sympy__sympy-24213` | **Resolved** · $0.086 · 38s | **Resolved** · $0.063 · 34s |
+| `1–4 hours` | `sympy__sympy-18199` | Not resolved · $0.071 · 54s | Not resolved · $0.190 · 131s |
+| unrated | `pallets__flask-4992` | **Resolved** · $0.111 · 30s | Not resolved · $0.091 · 34s |
 
-**3 of 4 resolved. $0.41 for the set.** Model: `claude-sonnet-5` throughout.
+**Agentic: 3 of 4. Agentless: 2 of 4.**
+$1.06 for the set, `claude-sonnet-5` throughout.
 
-On all three it solved, the agent's patch is **exactly the same size** as the one
-the maintainers shipped — 10 changed lines against 10 on flask, 2 against 2 on
-both sympy instances. It found the edit a maintainer found, not a sprawling
-rewrite that happens to pass. On the one it failed, it changed 4 lines where 49
-were needed.
+Four issues cannot rank two architectures, and this is not offered as a ranking.
+What it does show is where they diverge, and the divergence is not the one the
+cost tables in either paper would lead you to expect.
 
-### The two most interesting ones
+### The three most interesting ones
 
-**`flask-4992` — where following the issue would have failed.** The issue
-proposes `mode="b"`. The API Flask actually shipped, and therefore the API the
-graded test calls, is `text=False`. An agent that implements what it was asked
-for fails this instance. This one read the surrounding code, chose
-`text: bool = True`, updated the docstring example from `toml` to `tomllib`,
-added the `versionchanged` note, then ran the suite and used `git stash` to
-confirm the remaining failures were pre-existing.
+**`flask-4992` — the loop's advantage, in one instance.** The issue proposes
+`mode="b"`. The API Flask actually shipped, and therefore the API the graded
+test calls, is `text=False`. The agentic run read the surrounding code, chose
+`text: bool = True`, updated the docstring from `toml` to `tomllib`, added the
+`versionchanged` note, then ran the suite and used `git stash` to confirm the
+remaining failures were pre-existing. The agentless pipeline has no shell and
+cannot look around: it implemented what the issue asked for, which is the wrong
+API, and failed. That is the architectural trade-off stated plainly — a pipeline
+is cheaper and more predictable right up until the issue is wrong.
 
-**`sympy-18199` — where the agent's limit actually is.** The issue says
-`nthroot_mod` misses the root `x = 0` when `a % p == 0`. The agent implemented
-exactly that, in **4 changed lines**, and it is a correct reading of the issue.
-The fix the maintainers shipped changed **49**: it also adds
-`_nthroot_mod_composite`, support for **composite moduli** that the issue never
-mentions. The graded test
-exercises `solveset` over `Mod(x**3, 8)`, and 8 is composite — so the agent's
-patch cannot pass it.
+**`sympy-24213` — the pipeline's advantage, in one instance.** The fault is one
+function, the issue names it precisely, and there is nothing to explore. The
+pipeline localized it in a single call and sampled four patches against it; the
+loop spent seven turns arriving at the same two-line edit. Same patch, less
+money, fewer moving parts.
 
-That failure is on the site, with its diff and its test output, and it was not
-re-run to get a better one. An agent that solves easy issues and visibly breaks
-on hard ones is a more useful artifact than four staged successes: "where does
-it break" is the first thing anyone reading this will want to know.
+**`sympy-18199` — where both of them stop.** The issue says `nthroot_mod` misses
+the root `x = 0` when `a % p == 0`. Both arms implemented exactly that, and both
+are a correct reading of the issue. The fix the maintainers shipped changed
+**49 lines**: it also adds `_nthroot_mod_composite`, support for **composite
+moduli** that the issue never mentions. The graded test exercises `solveset` over
+`Mod(x**3, 8)`, and 8 is composite — so neither patch can pass it.
+
+Both failures are on the site, with their diffs and their test output, and
+neither was re-run to get a better one. An agent that solves easy issues and
+visibly breaks on hard ones is a more useful artifact than staged successes:
+"where does it break" is the first thing anyone reading this will want to know.
 
 ## What it does
 
@@ -110,12 +117,12 @@ Grounded in: [Anthropic's SWE-bench work](https://www.anthropic.com/engineering/
 | Verified | Not done |
 |---|---|
 | Both architectures implemented and runnable | **No full 300-instance benchmark has been run** — the results table is empty on purpose |
-| Four real agent runs recorded, graded, and published — 3 resolved, 1 not | The agentless arm has not been recorded end to end |
+| Both arms recorded end to end on the same four issues, graded and published | Four issues is not a resolve rate, and both arms on one issue is still one issue |
 | Difficulty labelled from SWE-bench Verified's human annotations | In-harness grading is a capped proxy, not the official grader |
 | Two workspace backends: Docker sandbox, and local (no Docker) | No integration tests for the Docker backend (Docker-gated) |
 | BYOK across four providers through one client | |
 | Hard timeouts, per-task isolation, secret scanning on recordings | |
-| 85 unit tests, ruff clean, CI green | |
+| 93 unit tests, ruff clean, CI green | |
 
 Any resolve-rate figures you see referenced elsewhere (Anthropic's ~49%, Agentless'
 ~32%) belong to **those papers**, not to this system. Nothing here is extrapolated
@@ -262,6 +269,17 @@ these only appears when the thing actually executes:
 | `git diff HEAD` omitted untracked files | A patch that adds a new module read as "changed nothing" |
 | Shallow clone + checkout of a years-old commit | Most SWE-bench instances could not be checked out at all |
 
+Recording the **agentless** arm meant running it end to end for the first time,
+and it had the same story — five bugs that every unit test passed straight over:
+
+| Bug | Why it mattered |
+|---|---|
+| A candidate was kept only if the suite came back **completely clean** | SWE-bench checks out a years-old commit and installs current dependencies over it, so some tests are red before the model touches anything. On flask this discarded all four candidates — including working ones — and reported it as the model failing to write a patch. The gate now measures the suite *before* patching and asks the only question that means anything: did this candidate break something that worked? |
+| Validation ran the repository's **entire** test suite, once per candidate | Sympy's full suite is the better part of an hour; ten candidates is ten of those. This is why the arm had only ever been unit-tested — nobody could afford to run it. It now runs the tests nearest the patched file |
+| Localization returned the same function twice, and the sample budget was split across the duplicate | Half of every run was paid to ask an identical question about an identical file |
+| Rejected samples were reported only when **every** sample failed | A run that silently discarded half of what it paid for looked identical to one that discarded none |
+| Repair capped responses at 2048 tokens | On a long function the reply ran past the cap and arrived as unclosed JSON — counted as a rejected sample, and billed like a good one |
+
 The frontend had its own version of the same problem: the console shipped a
 hand-written `SAMPLE_RUN` with invented reasoning, invented token counts and an
 invented `4 passed in 3.21s`, streaming into the UI looking exactly like a real
@@ -274,6 +292,7 @@ build:
 
 | Bug | Why it mattered |
 |---|---|
+| `goldPatchLines` was still `patch.count("\n")` in the recorder | The corrected added-plus-removed figures had only ever been fixed *in the committed data*, never in the script that writes it — and `agentPatchLines` was never written by the recorder at all. The next recording would have silently reintroduced the bug below |
 | The done event reported `len(diff.splitlines())` as "lines changed" | Headers, hunk markers and context all counted: a one-line edit read as **13 lines changed** while the patch view beside it correctly showed one |
 | `.meta` styled both the rail's key/value list and the diff's header rows | Equal specificity, so every diff header inherited `flex-direction: column` and stood on end at triple height |
 | `cache: "force-cache"` on the recordings | A returning visitor kept the old file **indefinitely** — the site served superseded numbers with nothing to signal it |
@@ -283,7 +302,7 @@ build:
 
 ## Benchmark Results
 
-**No full benchmark run exists yet, and this table is empty rather than
+**No full 300-instance run exists yet, and this table is empty rather than
 estimated.** Running `eval.run_eval --compare` fills it.
 
 | Metric | Agentic | Agentless |
@@ -292,6 +311,12 @@ estimated.** Running `eval.run_eval --compare` fills it.
 | Resolved / Total | — / 300 | — / 300 |
 | Avg cost / issue | — | — |
 | Avg turns | — | — (3 phases) |
+
+What *has* been measured is the four-instance head-to-head above: **3/4
+against 2/4**, at $0.101 and $0.163 per issue
+respectively. Four issues chosen for having environments that still build on a
+modern interpreter is a biased sample and far too small to rank anything, which
+is why it sits beside the empty table rather than inside it.
 
 ## Project Structure
 
