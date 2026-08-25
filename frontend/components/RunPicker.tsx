@@ -34,6 +34,15 @@ export default function RunPicker({
   const graded = runs.filter((r) => r.resolved !== null).length;
   // The arm badge is only information when both arms are present.
   const bothArms = new Set(runs.map((r) => r.approach ?? "agent")).size > 1;
+  // Group each issue's two runs together, loop first. The manifest orders by
+  // cost within a difficulty, which splits pairs apart and puts whichever arm
+  // happened to be cheaper first — an ordering that means nothing to a reader.
+  const ordered = [...runs].sort(
+    (a, b) =>
+      difficultyRank(a.difficulty) - difficultyRank(b.difficulty) ||
+      instanceOf(a.id).localeCompare(instanceOf(b.id)) ||
+      (a.approach === "agentless" ? 1 : 0) - (b.approach === "agentless" ? 1 : 0),
+  );
 
   return (
     <>
@@ -52,7 +61,7 @@ export default function RunPicker({
       </div>
 
       <div className="picker">
-        {runs.map((run) => {
+        {ordered.map((run) => {
           const rank = difficultyRank(run.difficulty);
           return (
             <button

@@ -6,6 +6,7 @@ import RunPicker from "@/components/RunPicker";
 import {
   approachLabel,
   difficultyShort,
+  instanceOf,
   formatDuration,
   formatRecordedAt,
   loadRun,
@@ -186,7 +187,9 @@ export default function RunDeck({
   return (
     <div className="split">
       <div className="work">
-        <p className="eyebrow">Recorded run · {runs.length} of 300 attempted</p>
+        <p className="eyebrow">
+          Recorded runs · {new Set(runs.map((r) => instanceOf(r.id))).size} issues, both arms
+        </p>
         <h1>
           Two ways to fix a bug. One agent, <em>one pipeline</em>.
         </h1>
@@ -218,6 +221,15 @@ export default function RunDeck({
         )}
 
         <RunPicker runs={runs} activeId={selected?.id ?? null} onSelect={onSelect} disabled={playing} />
+
+        {selected && (
+          <Counterpart
+            runs={runs}
+            selected={selected}
+            onSelect={onSelect}
+            disabled={playing}
+          />
+        )}
 
         {run && <RunFacts run={run} />}
 
@@ -318,6 +330,69 @@ function RunFacts({ run }: { run: RecordedRun }) {
         <dd className="small">{formatRecordedAt(run.recordedAt)}</dd>
       </Fact>
     </dl>
+  );
+}
+
+/**
+ * How the other architecture did on this same issue.
+ *
+ * The picker lists every recording, but a visitor watching one run has no way
+ * to see the thing this project is actually about — that the same issue went
+ * through a second architecture and sometimes came out differently. This is
+ * that answer, in one line, next to the run it belongs to.
+ */
+function Counterpart({
+  runs,
+  selected,
+  onSelect,
+  disabled,
+}: {
+  runs: RunSummary[];
+  selected: RunSummary;
+  onSelect: (run: RunSummary) => void;
+  disabled: boolean;
+}) {
+  const instance = instanceOf(selected.id);
+  const other = runs.find(
+    (r) => instanceOf(r.id) === instance && r.id !== selected.id,
+  );
+  if (!other) return null;
+
+  const same = other.resolved === selected.resolved;
+  const cheaper = other.costUsd < selected.costUsd;
+
+  return (
+    <div className="counter">
+      <span className="counter-label">
+        the {approachLabel(other.approach)} arm, same issue
+        <InfoTip
+          label="the other arm"
+          text="Both architectures were run on this exact issue, with the same model on the same machine. Where they disagree is the interesting part: the loop can read the surrounding code and the pipeline cannot, which decides some issues and costs money on others."
+        />
+      </span>
+      <span className={other.resolved ? "ok" : "bad"}>
+        {other.resolved === null ? "ungraded" : other.resolved ? "solved" : "failed"}
+      </span>
+      <span className="counter-figs">
+        ${other.costUsd.toFixed(3)} · {Math.round(other.durationSeconds)}s
+        {" · "}
+        {same
+          ? cheaper
+            ? "same verdict, less money"
+            : "same verdict, more money"
+          : other.resolved
+            ? "it solved what this run did not"
+            : "this run solved what it did not"}
+      </span>
+      <button
+        type="button"
+        className="btn btn-ghost btn-small"
+        disabled={disabled}
+        onClick={() => onSelect(other)}
+      >
+        Watch that one →
+      </button>
+    </div>
   );
 }
 

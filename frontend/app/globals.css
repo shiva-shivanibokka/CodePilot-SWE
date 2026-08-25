@@ -515,6 +515,46 @@ h3 {
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
+/* The other arm's result on the same issue, sat under the picker. Its own
+   block rather than a table row: it belongs to the run on screen, not to the
+   list above it. */
+.counter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 10px 13px;
+  border: 1px dashed var(--key-dim);
+  border-radius: 9px;
+  background: var(--card);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.counter-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dim);
+  letter-spacing: 0.02em;
+}
+.counter .ok {
+  color: var(--ok);
+  font-weight: 600;
+}
+.counter .bad {
+  color: var(--bad);
+  font-weight: 600;
+}
+.counter-figs {
+  color: var(--faint);
+}
+.counter .btn-small {
+  margin-left: auto;
+  padding: 5px 11px;
+  font-size: 11.5px;
+}
+
 /* Scoped to the table on purpose: bare .ok / .bad / .muted would be three more
    names competing across the whole sheet, which is how the last collision here
    started. */
