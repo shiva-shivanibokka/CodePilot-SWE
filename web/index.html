@@ -36,15 +36,20 @@
   main { padding: 20px 0 70px; }
 
   /* -- picker and controls ------------------------------------------- */
-  .picker { display: flex; flex-wrap: wrap; gap: 0; margin-bottom: 18px;
-            border-bottom: 1px solid var(--line); }
+  /* Nothing plays until one of these is chosen, so it has to look like the
+     place you choose from rather than a row of tabs above the content. */
+  .choose { margin-bottom: 18px; }
+  .picker { display: flex; flex-wrap: wrap; gap: 10px; padding: 13px 14px; }
   .picker button {
-    font: inherit; font-size: 12.5px; color: var(--dim); cursor: pointer;
-    background: none; border: 0; border-bottom: 2px solid transparent;
-    padding: 9px 16px 8px; margin-bottom: -1px;
+    flex: 1 1 240px; text-align: left; font: inherit; font-size: 12.5px;
+    color: var(--text); cursor: pointer; background: #0f131a;
+    border: 1px solid var(--line-soft); border-radius: 4px; padding: 10px 13px;
   }
-  .picker button:hover { color: var(--text); }
-  .picker button[aria-pressed="true"] { color: var(--text); border-bottom-color: var(--accent); }
+  .picker button:hover { border-color: var(--dimmer); }
+  .picker button[aria-pressed="true"] { border-color: var(--accent); background: #101a1a; }
+  .picker button[aria-pressed="true"] .t { color: var(--accent); }
+  .picker .t { display: block; }
+  .picker .s { display: block; color: var(--dimmer); font-size: 11.5px; margin-top: 4px; }
 
   .controls { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
               margin-bottom: 14px; }
@@ -189,7 +194,10 @@
 </header>
 
 <main>
-  <div class="picker" id="picker"></div>
+  <section class="pane choose">
+    <h2>select a recording</h2>
+    <div class="box picker" id="picker"></div>
+  </section>
 
   <div class="task" id="task" hidden>
     <span class="k">task</span><span class="v" id="taskText"></span>
@@ -483,12 +491,15 @@ document.querySelectorAll(".speed").forEach((b) => {
     if (!listing.replays.length) throw new Error("no recordings yet");
     for (const entry of listing.replays) {
       const b = document.createElement("button");
-      b.textContent = entry.title;
       b.dataset.file = entry.file;
+      b.innerHTML =
+        `<span class="t">${esc(entry.title)}</span>` +
+        `<span class="s">${entry.model_calls} model calls · ` +
+        `$${entry.cost_usd.toFixed(4)} · ${Math.round(entry.duration_seconds)}s</span>`;
       b.onclick = () => load(entry);
       picker.appendChild(b);
     }
-    idle(`${listing.replays.length} recordings. Choose one above to play it.`);
+    idle("Pick one of the recordings above and it will play here.");
   } catch (err) {
     stream.innerHTML =
       `<span class="empty">No recordings found (${esc(err.message)}).<br><br>` +
