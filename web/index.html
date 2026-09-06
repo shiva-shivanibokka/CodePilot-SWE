@@ -53,7 +53,8 @@
     background: none; border: 1px solid var(--line); border-radius: 3px;
     padding: 4px 11px;
   }
-  .controls button:hover { color: var(--text); border-color: var(--dimmer); }
+  .controls button:hover:not(:disabled) { color: var(--text); border-color: var(--dimmer); }
+  .controls button:disabled { color: #3d4450; border-color: var(--line-soft); cursor: default; }
   .controls button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
   .meta { color: var(--dimmer); font-size: 12px; margin-left: auto; }
 
@@ -212,7 +213,7 @@
     </section>
     <section class="pane">
       <h2>files changed</h2>
-      <div class="box" id="changes"><span class="empty">Nothing changed yet.</span></div>
+      <div class="box" id="changes"><span class="empty">Nothing yet.</span></div>
     </section>
   </div>
 
@@ -407,6 +408,7 @@ function step() {
 }
 
 function play() {
+  if (!current) return;   // nothing chosen yet; the speed buttons still work
   if (timer) return stop();
   if (index >= (current?.events.length || 0)) restart();
   playBtn.textContent = "pause";
@@ -422,8 +424,29 @@ function restart() {
   tick();
 }
 
+function idle(message) {
+  stop();
+  current = null;
+  index = 0;
+  files = new Map();
+  taskBox.hidden = true;
+  meta.textContent = "";
+  foot.textContent = "";
+  tick();
+  stream.innerHTML = `<span class="empty">${esc(message)}</span>`;
+  changes.innerHTML = '<span class="empty">Nothing yet.</span>';
+  setControls(false);
+}
+
+// The controls do nothing until there is something to control, and a button
+// that does nothing should not look ready.
+function setControls(enabled) {
+  [playBtn, $("reset")].forEach((b) => { b.disabled = !enabled; });
+}
+
 async function load(entry) {
   restart();
+  setControls(true);
   stream.innerHTML = '<span class="empty">Loading…</span>';
   current = await (await fetch(`replays/${entry.file}`)).json();
   stream.innerHTML = "";
@@ -465,7 +488,7 @@ document.querySelectorAll(".speed").forEach((b) => {
       b.onclick = () => load(entry);
       picker.appendChild(b);
     }
-    load(listing.replays[0]);
+    idle(`${listing.replays.length} recordings. Choose one above to play it.`);
   } catch (err) {
     stream.innerHTML =
       `<span class="empty">No recordings found (${esc(err.message)}).<br><br>` +

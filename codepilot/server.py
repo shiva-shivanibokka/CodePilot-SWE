@@ -134,6 +134,11 @@ class ServerConfig:
         """
         if not name or name.startswith("/") or "\\" in name or ".." in Path(name).parts:
             raise ValueError(f"not a repository name: {name!r}")
+        # A run in progress keeps its working copy beside the repositories, as
+        # `.codepilot-run-<id>`. Without this, one caller can name another
+        # caller's half-edited checkout and read or change it.
+        if any(part.startswith(".") for part in Path(name).parts):
+            raise ValueError(f"not a repository name: {name!r}")
         target = (self.workspace_root / name).resolve()
         if target != self.workspace_root and self.workspace_root not in target.parents:
             raise ValueError(f"{name!r} is outside the workspace root")
@@ -159,7 +164,9 @@ class ServerConfig:
             "effort": self.effort,
             "workspace_root": str(self.workspace_root),
             "repositories": sorted(
-                p.name for p in self.workspace_root.iterdir() if p.is_dir()
+                p.name
+                for p in self.workspace_root.iterdir()
+                if p.is_dir() and not p.name.startswith(".")
             ),
             "extra_allowed_commands": sorted(self.extra_allowed),
         }

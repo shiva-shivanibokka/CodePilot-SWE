@@ -299,3 +299,30 @@ def test_a_binary_file_is_named_rather_than_mangled(tmp_path):
     (before / "logo.png").write_bytes(b"\x89PNG\x00\xff")
     (after / "logo.png").write_bytes(b"\x89PNG\x00\xfe")
     assert "not a text file" in build_patch(before, after, ["logo.png"])
+
+
+# ---------------------------------------------------------------------------
+# One run must not be able to reach another
+# ---------------------------------------------------------------------------
+
+
+def test_a_run_in_progress_is_not_advertised_as_a_repository(workspace):
+    """Each run copies its repository to `.codepilot-run-<id>` beside the rest.
+
+    Found by inspection, not by a test: the copy is a directory in the
+    workspace root, so it was listed by /v1/config and could be named by any
+    request — letting one caller read and edit another caller's half-finished
+    checkout. Hosted mode exists to stop exactly that.
+    """
+    (workspace / ".codepilot-run-abc123").mkdir()
+    config = ServerConfig.from_env()
+    assert config.describe()["repositories"] == ["demo"]
+
+
+@pytest.mark.parametrize(
+    "name", [".codepilot-run-abc123", ".git", ".ssh", "demo/../.codepilot-run-abc"]
+)
+def test_a_hidden_directory_can_never_be_named(workspace, name):
+    (workspace / ".codepilot-run-abc123").mkdir()
+    with pytest.raises(ValueError):
+        ServerConfig.from_env().resolve_repo(name)
