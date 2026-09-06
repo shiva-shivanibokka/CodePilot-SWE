@@ -6,78 +6,169 @@
 <title>CodePilot — recorded sessions</title>
 <style>
   :root {
-    --bg: #0d1017; --panel: #141922; --line: #232a36;
-    --text: #d7dde8; --dim: #7d8798; --accent: #7fd1c1;
-    --add: #7fd18a; --del: #e07b7b; --warn: #e0c07b;
+    --bg: #0d1017; --panel: #11151d; --line: #212836; --line-soft: #1a202b;
+    --text: #d7dde8; --dim: #79839a; --dimmer: #59616f; --accent: #7fd1c1;
+    --add: #86d69a; --add-bg: #12281a; --del: #e08b8b; --del-bg: #2a1417;
+    --warn: #e0c07b;
     --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    /* The page is read at arm's length on a wide screen, so the text column is
+       held off both edges rather than centred in a narrow box. */
+    --gutter: 2in;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--bg); color: var(--text);
-    font: 14px/1.6 var(--mono);
+    font: 14px/1.65 var(--mono); padding: 0 var(--gutter);
   }
-  header {
-    padding: 28px 24px 20px; border-bottom: 1px solid var(--line);
-    max-width: 1000px; margin: 0 auto;
-  }
-  h1 { margin: 0 0 6px; font-size: 20px; letter-spacing: -0.01em; }
-  .sub { color: var(--dim); font-size: 13px; max-width: 68ch; }
+  a { color: var(--accent); text-decoration-color: var(--line); }
+  a:hover { text-decoration-color: currentColor; }
+
+  header { padding: 40px 0 24px; border-bottom: 1px solid var(--line); }
+  h1 { margin: 0 0 10px; font-size: 22px; font-weight: 600; letter-spacing: .01em; }
+  h1 .rule { color: var(--dimmer); font-weight: 400; }
+  .byline { font-size: 17px; color: var(--accent); margin: 0 0 20px; letter-spacing: .01em; }
+  .byline .by { color: var(--dimmer); font-size: 13px; }
+  .sub { color: var(--dim); font-size: 13px; margin: 0 0 10px; }
+  .sub:last-child { margin-bottom: 0; }
   .sub strong { color: var(--text); font-weight: 600; }
-  main { max-width: 1000px; margin: 0 auto; padding: 20px 24px 60px; }
+  .sub code { color: var(--accent); }
 
-  .picker { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
-  button {
-    font: inherit; font-size: 12px; color: var(--text); cursor: pointer;
-    background: var(--panel); border: 1px solid var(--line);
-    border-radius: 6px; padding: 7px 12px;
-  }
-  button:hover { border-color: var(--accent); }
-  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  main { padding: 20px 0 70px; }
 
-  .controls {
-    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-    padding: 10px 0 14px; border-bottom: 1px solid var(--line); margin-bottom: 14px;
+  /* -- picker and controls ------------------------------------------- */
+  .picker { display: flex; flex-wrap: wrap; gap: 0; margin-bottom: 18px;
+            border-bottom: 1px solid var(--line); }
+  .picker button {
+    font: inherit; font-size: 12.5px; color: var(--dim); cursor: pointer;
+    background: none; border: 0; border-bottom: 2px solid transparent;
+    padding: 9px 16px 8px; margin-bottom: -1px;
   }
-  .meta { color: var(--dim); font-size: 12px; margin-left: auto; }
+  .picker button:hover { color: var(--text); }
+  .picker button[aria-pressed="true"] { color: var(--text); border-bottom-color: var(--accent); }
 
-  #stream {
-    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
-    padding: 16px; min-height: 320px; max-height: 70vh; overflow-y: auto;
-    white-space: pre-wrap; word-break: break-word;
+  .controls { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+              margin-bottom: 14px; }
+  .controls button {
+    font: inherit; font-size: 12px; color: var(--dim); cursor: pointer;
+    background: none; border: 1px solid var(--line); border-radius: 3px;
+    padding: 4px 11px;
   }
-  .ev { display: flex; gap: 10px; padding: 2px 0; animation: in .18s ease-out; }
-  @keyframes in { from { opacity: 0; transform: translateY(2px); } }
-  .icon { flex: 0 0 1.4em; }
-  .body { flex: 1 1 auto; }
-  .t-user_message .body { color: #fff; font-weight: 600; }
-  .t-assistant_text .body { color: var(--text); padding: 6px 0; }
-  .t-tool_call .body { color: var(--accent); }
-  .t-tool_result .body, .t-cost .body, .t-checkpoint .body { color: var(--dim); }
-  .t-error .body, .t-budget .body { color: var(--warn); }
-  .t-done .body { color: var(--add); }
-  .diff { margin: 4px 0 8px; border-left: 2px solid var(--line); padding-left: 10px; font-size: 12.5px; }
-  .diff .a { color: var(--add); }
-  .diff .d { color: var(--del); }
-  .diff .h { color: var(--dim); }
-  footer { color: var(--dim); font-size: 12px; margin-top: 22px; max-width: 68ch; }
-  a { color: var(--accent, #7fd1ae); }
-  a:hover { text-decoration: none; }
-  a { color: var(--accent); }
-  .empty { color: var(--dim); }
+  .controls button:hover { color: var(--text); border-color: var(--dimmer); }
+  .controls button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+  .meta { color: var(--dimmer); font-size: 12px; margin-left: auto; }
+
+  /* -- the task, stated once and left on screen ---------------------- */
+  .task { border-left: 2px solid var(--accent); padding: 2px 0 2px 14px;
+          margin-bottom: 18px; }
+  .task .k { color: var(--dimmer); font-size: 11px; letter-spacing: .09em;
+             text-transform: uppercase; display: block; margin-bottom: 3px; }
+  .task .v { color: var(--text); font-size: 13.5px; }
+
+  /* -- two panes: what it did, and what changed ---------------------- */
+  .panes { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+           gap: 22px; align-items: start; }
+  .pane > h2 {
+    margin: 0 0 8px; font-size: 11px; font-weight: 500; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--dimmer);
+  }
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; }
+
+  #stream { padding: 12px 14px; height: 62vh; min-height: 340px; overflow-y: auto; }
+  #changes { padding: 12px 14px; height: 62vh; min-height: 340px; overflow-y: auto; }
+
+  /* -- one line of the transcript ------------------------------------ */
+  .ev { display: flex; gap: 12px; padding: 1px 0; animation: in .16s ease-out; }
+  @keyframes in { from { opacity: 0 } }
+  .ev .k {
+    flex: 0 0 4.5em; text-align: right; color: var(--dimmer);
+    font-size: 11.5px; padding-top: 2px; user-select: none;
+  }
+  .ev .v { flex: 1 1 auto; min-width: 0; white-space: pre-wrap; word-break: break-word; }
+  .ev.gap { margin-top: 9px; }
+
+  .t-user_message .v { color: var(--text); }
+  .t-assistant_text .v { color: var(--text); padding: 3px 0 5px; }
+  .t-tool_call .v { color: var(--accent); }
+  .t-tool_call .arg { color: var(--dim); }
+  .t-tool_result .v, .t-checkpoint .v, .t-cost .v { color: var(--dim); font-size: 12.5px; }
+  .t-cost .k, .t-cost .v { color: var(--dimmer); }
+  .t-error .v, .t-budget .v { color: var(--warn); }
+  .t-done .v { color: var(--add); }
+  .t-diff .v { color: var(--dim); }
+  .out { color: var(--dim); font-size: 12.5px; }
+  .out .more { color: var(--dimmer); font-style: italic; }
+  .pass { color: var(--add); }
+  .fail { color: var(--del); }
+
+  /* -- a file change, kept on screen instead of scrolling away ------- */
+  .file { border: 1px solid var(--line-soft); border-radius: 4px; margin-bottom: 12px; }
+  .file > .name {
+    display: flex; gap: 10px; align-items: baseline; padding: 7px 11px;
+    border-bottom: 1px solid var(--line-soft); background: #0f131a;
+    border-radius: 4px 4px 0 0; font-size: 12.5px;
+    position: sticky; top: -13px; z-index: 1;
+  }
+  .file .path { color: var(--text); }
+  .file .count { margin-left: auto; font-size: 11.5px; }
+  .file .count .p { color: var(--add); }
+  .file .count .m { color: var(--del); }
+  .hunk { overflow-x: auto; padding: 6px 0; font-size: 12.5px; line-height: 1.55; }
+  .hunk div { padding: 0 11px; white-space: pre; }
+  .hunk .at { color: var(--dimmer); background: #0f131a; }
+  .hunk .a { color: var(--add); background: var(--add-bg); }
+  .hunk .d { color: var(--del); background: var(--del-bg); }
+  .hunk .c { color: var(--dim); }
+
+  .empty { color: var(--dimmer); font-size: 12.5px; }
+
+  /* How far through the recording we are, without a number to read. */
+  .progress { height: 2px; background: var(--line-soft); border-radius: 2px;
+              margin: 0 0 16px; overflow: hidden; }
+  .progress i { display: block; height: 100%; width: 0; background: var(--accent);
+                transition: width .12s linear; }
+
+  .v b { color: #fff; font-weight: 600; }
+  .v .c { color: var(--accent); }
+  .v em { color: var(--dim); font-style: italic; }
+
+  /* The default light scrollbar on a dark panel reads as a scar. */
+  #stream, #changes, .hunk { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+  #stream::-webkit-scrollbar, #changes::-webkit-scrollbar,
+  .hunk::-webkit-scrollbar { width: 9px; height: 9px; }
+  #stream::-webkit-scrollbar-thumb, #changes::-webkit-scrollbar-thumb,
+  .hunk::-webkit-scrollbar-thumb { background: var(--line); border-radius: 5px; }
+  #stream::-webkit-scrollbar-track, #changes::-webkit-scrollbar-track,
+  .hunk::-webkit-scrollbar-track { background: transparent; }
+
+  footer { border-top: 1px solid var(--line); margin-top: 26px; padding-top: 18px;
+           color: var(--dimmer); font-size: 12px; }
+  #foot { border: 0; margin: 0; padding: 0 0 6px; }
+  .credit { font-size: 18px; color: var(--text); margin: 0 0 6px; }
+  .credit .by { color: var(--dimmer); font-size: 13px; }
+
+  @media (max-width: 1180px) { :root { --gutter: 1in; } }
+  @media (max-width: 900px) {
+    :root { --gutter: 5vw; }
+    .panes { grid-template-columns: minmax(0, 1fr); }
+    #stream, #changes { height: auto; max-height: 60vh; }
+  }
 </style>
 </head>
 <body>
 <header>
-  <h1>CodePilot — recorded sessions</h1>
+  <h1>CodePilot <span class="rule">— recorded sessions</span></h1>
+  <p class="byline"><span class="by">Built by</span> Shivani Bokka</p>
   <p class="sub">
     A small coding agent that edits a real git repository: it reads the code,
     changes it, runs the tests, and checkpoints every turn so
     <code>codepilot undo</code> puts things back.
     <strong>These are recordings of real runs</strong> — the same event stream
     the terminal prints, replayed at its original pacing. Nothing is simulated,
-    and nothing is re-enacted. The cost on each one is what it actually cost.
+    nothing is re-enacted, and the cost shown on each one is what it actually
+    cost. The left pane is what the agent did; the right pane is every line it
+    changed, kept on screen rather than scrolling past.
   </p>
-  <p class="sub" style="margin-top:10px">
+  <p class="sub">
     There is no live demo here, because a live demo would mean running shell
     commands for strangers on hardware I pay for. It <em>can</em> be hosted —
     there is a server mode that runs every command in a locked-down container,
@@ -85,147 +176,301 @@
     writing to your branch — but the thing to do with it is clone it, add your
     own key, and point it at your own repository.
   </p>
-  <p class="sub" style="margin-top:10px">
+  <p class="sub">
     It was also built to measure its own design rather than assert it. Four
     experiments, twenty tasks, each scored by held-out tests the agent never
     sees. Two of them contradicted the design and the design changed: whether
     to rewrite a file or edit it in place <strong>reverses with file size</strong>,
-    and the symbol index this project is named after
-    <strong>never beat plain grep</strong>. The numbers, and the raw results
-    files behind them, are in the
+    and the symbol index this project is named after <strong>never beat plain
+    grep</strong>. The numbers, and the raw results files behind them, are in the
     <a href="https://github.com/shiva-shivanibokka/CodePilot-Agent">repository</a>.
   </p>
 </header>
 
 <main>
   <div class="picker" id="picker"></div>
+
+  <div class="task" id="task" hidden>
+    <span class="k">task</span><span class="v" id="taskText"></span>
+  </div>
+
   <div class="controls">
-    <button id="play">▶ play</button>
-    <button id="reset">↺ restart</button>
-    <button class="speed" data-x="1" aria-pressed="true">1×</button>
-    <button class="speed" data-x="4">4×</button>
+    <button id="play">play</button>
+    <button id="reset">restart</button>
+    <button class="speed" data-x="1" aria-pressed="true">1&times;</button>
+    <button class="speed" data-x="4">4&times;</button>
     <button class="speed" data-x="0">skip to end</button>
     <span class="meta" id="meta"></span>
   </div>
-  <div id="stream"><span class="empty">Loading recordings…</span></div>
+
+  <div class="progress"><i id="bar"></i></div>
+
+  <div class="panes">
+    <section class="pane">
+      <h2>transcript</h2>
+      <div class="box" id="stream"><span class="empty">Loading recordings…</span></div>
+    </section>
+    <section class="pane">
+      <h2>files changed</h2>
+      <div class="box" id="changes"><span class="empty">Nothing changed yet.</span></div>
+    </section>
+  </div>
+
   <footer id="foot"></footer>
   <footer>
-    Built by Shivani Bokka ·
-    <a href="https://github.com/shiva-shivanibokka/CodePilot-Agent">source and measurements on GitHub</a>
+    <p class="credit"><span class="by">Built by</span> Shivani Bokka</p>
+    <a href="https://github.com/shiva-shivanibokka/CodePilot-Agent">Source, and every measurement behind the claims above, on GitHub</a>
   </footer>
 </main>
 
 <script>
-const ICONS = {
-  user_message: "❯", assistant_text: "·", plan: "📝", tool_call: "🔧",
-  tool_result: "📋", diff: "±", test_result: "🧪", checkpoint: "⎘",
-  permission_decision: "🔓", interrupt: "✋", cost: "💰", budget: "⛔",
-  error: "❌", done: "✅",
+"use strict";
+
+// The left column of the transcript. Words rather than icons: a build log is
+// read by scanning that column, and an emoji has to be decoded before it can
+// be scanned.
+const LABEL = {
+  user_message: "task", assistant_text: "", plan: "plan", tool_call: "run",
+  tool_result: "out", diff: "edit", test_result: "test", checkpoint: "ckpt",
+  permission_decision: "perm", interrupt: "stop", cost: "cost", budget: "halt",
+  error: "error", done: "done",
 };
 
-const stream = document.getElementById("stream");
-const picker = document.getElementById("picker");
-const meta   = document.getElementById("meta");
-const foot   = document.getElementById("foot");
-const playBtn = document.getElementById("play");
+// Arguments worth showing on the call line. Everything else is noise: an
+// edit_file call carries the whole replacement string, and the diff below it
+// already says what changed.
+const SHOW_ARGS = ["path", "command", "pattern", "name", "query", "paths"];
 
-let current = null, timer = null, index = 0, speed = 1;
+const $ = (id) => document.getElementById(id);
+const stream = $("stream"), changes = $("changes"), picker = $("picker");
+const meta = $("meta"), foot = $("foot"), playBtn = $("play");
+const taskBox = $("task"), taskText = $("taskText");
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c =>
-    ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+let current = null, timer = null, index = 0, speed = 1, files = new Map();
+
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// The agent writes its reasoning and its closing summary in markdown, and the
+// summary is the single most useful thing in the recording. Rendering three
+// inline forms is the difference between reading it and decoding it. Escaped
+// first, so this adds emphasis to text that is already inert.
+function inline(text) {
+  return esc(text)
+    .replace(/`([^`\n]+)`/g, '<span class="c">$1</span>')
+    .replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>")
+    .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s.,;:)]|$)/g, "$1<em>$2</em>");
 }
 
-function renderDiff(text) {
-  return text.split("\n").map(line => {
-    const cls = line.startsWith("+") && !line.startsWith("+++") ? "a"
-              : line.startsWith("-") && !line.startsWith("---") ? "d" : "h";
-    return `<span class="${cls}">${escapeHtml(line)}</span>`;
-  }).join("\n");
+function callLine(ev) {
+  const tool = ev.data?.tool;
+  if (!tool) return esc(ev.message);
+  const args = ev.data.arguments || {};
+  const shown = SHOW_ARGS
+    .filter((k) => args[k] !== undefined && args[k] !== "")
+    .map((k) => String(args[k]))
+    .join(" ");
+  return esc(tool) + (shown ? ` <span class="arg">${esc(shown)}</span>` : "");
+}
+
+function resultLine(ev) {
+  const output = (ev.data?.output || ev.message || "").replace(/\s+$/, "");
+  const lines = output.split("\n");
+  // One tool result can be a single 900-character JSON line. Wrapping it is
+  // worse than clipping it: the panel becomes the blob.
+  const clip = (l) => (l.length > 140 ? l.slice(0, 140) + " …" : l);
+  const head = lines.slice(0, 6).map((l) => esc(clip(l))).join("\n");
+  const rest = lines.length - 6;
+  const more = rest > 0 ? `\n<span class="more">… ${rest} more line${rest > 1 ? "s" : ""}</span>` : "";
+  return `<span class="out">${head}${more}</span>`;
+}
+
+function testLine(ev) {
+  const d = ev.data || {};
+  if (d.no_tests) return `<span class="out">no tests found</span>`;
+  const bits = [];
+  if (d.passed) bits.push(`<span class="pass">${d.passed} passed</span>`);
+  if (d.failed) bits.push(`<span class="fail">${d.failed} failed</span>`);
+  if (d.errors) bits.push(`<span class="fail">${d.errors} errors</span>`);
+  return bits.length ? bits.join(", ") : esc(ev.message);
+}
+
+function costLine(ev) {
+  const d = ev.data || {};
+  if (d.cost_usd === undefined) return esc(ev.message);
+  const n = (x) => Number(x || 0).toLocaleString();
+  const cached = d.cache_read ? ` · ${n(d.cache_read)} cached` : "";
+  return `$${d.cost_usd.toFixed(4)} · ${n(d.input_tokens)} in / ${n(d.output_tokens)} out${cached}`;
+}
+
+function body(ev) {
+  switch (ev.type) {
+    case "tool_call":   return callLine(ev);
+    case "tool_result": return resultLine(ev);
+    case "test_result": return testLine(ev);
+    case "cost":        return costLine(ev);
+    // The change itself belongs in the right pane, where it stays put. The
+    // transcript only says that it happened, and when.
+    case "diff":        return esc(ev.data?.path || ev.message);
+    case "assistant_text":
+    case "plan":
+    case "done":         return inline(ev.message);
+    default:            return esc(ev.message);
+  }
+}
+
+function tick() {
+  const total = current?.events.length || 1;
+  $("bar").style.width = `${Math.round((index / total) * 100)}%`;
 }
 
 function append(ev) {
+  // The task is already stated above the panes. Repeating it as the first line
+  // of the transcript spends the reader's first glance on what they just read.
+  if (ev.type === "user_message" && ev.message === taskText.textContent) return;
   const el = document.createElement("div");
-  el.className = `ev t-${ev.type}`;
-  let body = escapeHtml(ev.message);
-  if (ev.type === "diff" && ev.data && ev.data.diff) {
-    body += `\n<div class="diff">${renderDiff(ev.data.diff)}</div>`;
-  }
-  el.innerHTML = `<span class="icon">${ICONS[ev.type] || "•"}</span><span class="body">${body}</span>`;
+  const label = LABEL[ev.type] ?? "";
+  // A blank line before each new thought or action, so the log has a rhythm
+  // instead of being one undifferentiated block.
+  const spaced = ev.type === "assistant_text" || ev.type === "tool_call";
+  el.className = `ev t-${ev.type}${spaced ? " gap" : ""}`;
+  el.innerHTML = `<span class="k">${esc(label)}</span><span class="v">${body(ev)}</span>`;
   stream.appendChild(el);
   stream.scrollTop = stream.scrollHeight;
+  if (ev.type === "diff") addChange(ev);
+  tick();
 }
 
-function stop() {
-  clearTimeout(timer); timer = null;
-  playBtn.textContent = "▶ play";
+function hunks(text) {
+  // The `--- a/x` / `+++ b/x` header repeats the filename already in the card.
+  return text.split("\n")
+    .filter((l) => !/^(---|\+\+\+) /.test(l))
+    .filter((l, i, all) => !(l === "" && i === all.length - 1))
+    .map((l) => {
+      const cls = l.startsWith("@@") ? "at"
+                : l.startsWith("+") ? "a"
+                : l.startsWith("-") ? "d" : "c";
+      return `<div class="${cls}">${esc(l || " ")}</div>`;
+    }).join("");
+}
+
+function addChange(ev) {
+  const d = ev.data || {};
+  if (!d.diff) return;
+  if (files.size === 0) changes.innerHTML = "";
+
+  let card = files.get(d.path);
+  if (!card) {
+    card = document.createElement("div");
+    card.className = "file";
+    card.innerHTML =
+      `<div class="name"><span class="path">${esc(d.path)}</span>` +
+      `<span class="count"></span></div>`;
+    changes.appendChild(card);
+    files.set(d.path, card);
+    card.dataset.added = 0;
+    card.dataset.removed = 0;
+  }
+  // A file edited twice shows both changes, in the order they happened.
+  const block = document.createElement("div");
+  block.className = "hunk";
+  block.innerHTML = hunks(d.diff);
+  card.appendChild(block);
+
+  card.dataset.added = Number(card.dataset.added) + Number(d.added || 0);
+  card.dataset.removed = Number(card.dataset.removed) + Number(d.removed || 0);
+  card.querySelector(".count").innerHTML =
+    `<span class="p">+${card.dataset.added}</span> ` +
+    `<span class="m">−${card.dataset.removed}</span>`;
+  changes.scrollTop = card.offsetTop - changes.offsetTop - 12;
+}
+
+function stop() { clearTimeout(timer); timer = null; playBtn.textContent = "play"; }
+
+// "Skip to end" renders the remainder in one pass. A loop rather than
+// recursion, because a long recording is a long stack.
+function drain() {
+  while (current && index < current.events.length) append(current.events[index++]);
+  stop();
 }
 
 function step() {
-  if (!current || index >= current.events.length) { stop(); return; }
-  const ev = current.events[index];
-  append(ev);
-  index++;
-  if (index >= current.events.length) { stop(); return; }
-  if (speed === 0) { step(); return; }
-  // Replay the real gaps, capped so a long model call is not a long stare.
-  const gap = Math.min(current.events[index].at_ms - ev.at_ms, 2500) / speed;
-  timer = setTimeout(step, Math.max(gap, 40));
+  if (!current || index >= current.events.length) return stop();
+  if (speed === 0) return drain();
+  append(current.events[index++]);
+  if (index >= current.events.length) return stop();
+  // The real gaps, capped: a thirty-second model call should read as a pause,
+  // not as a broken page.
+  const gap = Math.min(
+    current.events[index].at_ms - current.events[index - 1].at_ms, 2200) / speed;
+  timer = setTimeout(step, Math.max(gap, 45));
 }
 
 function play() {
-  if (timer) { stop(); return; }
+  if (timer) return stop();
   if (index >= (current?.events.length || 0)) restart();
-  playBtn.textContent = "❚❚ pause";
+  playBtn.textContent = "pause";
   step();
 }
 
 function restart() {
-  stop(); stream.innerHTML = ""; index = 0;
+  stop();
+  stream.innerHTML = "";
+  changes.innerHTML = '<span class="empty">Nothing changed yet.</span>';
+  files = new Map();
+  index = 0;
+  tick();
 }
 
 async function load(entry) {
   restart();
   stream.innerHTML = '<span class="empty">Loading…</span>';
-  const res = await fetch(`replays/${entry.file}`);
-  current = await res.json();
+  current = await (await fetch(`replays/${entry.file}`)).json();
   stream.innerHTML = "";
-  meta.textContent =
-    `${current.model_calls} model calls · $${current.total_cost_usd.toFixed(4)} · ${current.duration_seconds.toFixed(0)}s`;
+  const task = current.turns?.[0]?.task || "";
+  taskBox.hidden = !task;
+  taskText.textContent = task;
+  meta.textContent = `${current.model_calls} model calls · ` +
+    `$${current.total_cost_usd.toFixed(4)} · ${current.duration_seconds.toFixed(0)}s`;
   foot.textContent = current.note || "";
-  [...picker.children].forEach(b =>
+  [...picker.children].forEach((b) =>
     b.setAttribute("aria-pressed", String(b.dataset.file === entry.file)));
   play();
 }
 
-document.getElementById("play").onclick = play;
-document.getElementById("reset").onclick = () => { restart(); play(); };
-document.querySelectorAll(".speed").forEach(b => {
+playBtn.onclick = play;
+$("reset").onclick = () => { restart(); play(); };
+document.querySelectorAll(".speed").forEach((b) => {
   b.onclick = () => {
     speed = Number(b.dataset.x);
-    document.querySelectorAll(".speed").forEach(o =>
+    document.querySelectorAll(".speed").forEach((o) =>
       o.setAttribute("aria-pressed", String(o === b)));
-    if (speed === 0 && !timer) play();
+    // A speed change has to take effect now, not when the pending gap expires.
+    // "Skip to end" that waits two seconds before skipping reads as broken.
+    const wasPlaying = Boolean(timer);
+    clearTimeout(timer);
+    timer = null;
+    if (wasPlaying || speed === 0) play();
   };
 });
 
 (async () => {
   try {
-    const index_ = await (await fetch("replays/index.json")).json();
-    if (!index_.replays.length) throw new Error("no recordings yet");
-    for (const entry of index_.replays) {
+    const listing = await (await fetch("replays/index.json")).json();
+    if (!listing.replays.length) throw new Error("no recordings yet");
+    for (const entry of listing.replays) {
       const b = document.createElement("button");
       b.textContent = entry.title;
       b.dataset.file = entry.file;
       b.onclick = () => load(entry);
       picker.appendChild(b);
     }
-    load(index_.replays[0]);
+    load(listing.replays[0]);
   } catch (err) {
     stream.innerHTML =
-      `<span class="empty">No recordings found (${escapeHtml(err.message)}).<br><br>` +
+      `<span class="empty">No recordings found (${esc(err.message)}).<br><br>` +
       `Record one with:<br>&nbsp;&nbsp;codepilot run "…"<br>` +
-      `&nbsp;&nbsp;codepilot export &lt;session-id&gt;</span>`;
+      `&nbsp;&nbsp;codepilot export</span>`;
   }
 })();
 </script>
