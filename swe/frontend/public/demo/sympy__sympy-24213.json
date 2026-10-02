@@ -1,0 +1,310 @@
+{
+  "recordedAt": "2026-08-24T21:59:23.548388+00:00",
+  "backend": "local",
+  "approach": "agent",
+  "provider": "anthropic",
+  "model": "claude-sonnet-5",
+  "task": {
+    "kind": "swebench",
+    "id": "sympy__sympy-24213",
+    "title": "collect_factor_and_dimension does not detect equivalent dimensions in addition",
+    "repo": "sympy/sympy",
+    "difficulty": "15 min - 1 hour",
+    "url": "https://github.com/sympy/sympy",
+    "repoUrl": "https://github.com/sympy/sympy.git",
+    "baseCommit": "e8c22f6eac7314be8d92590bfff92ced79ee03e2",
+    "text": "collect_factor_and_dimension does not detect equivalent dimensions in addition\nCode to reproduce:\r\n```python\r\nfrom sympy.physics import units\r\nfrom sympy.physics.units.systems.si import SI\r\n\r\nv1 = units.Quantity('v1')\r\nSI.set_quantity_dimension(v1, units.velocity)\r\nSI.set_quantity_scale_factor(v1, 2 * units.meter / units.second)\r\n\r\na1 = units.Quantity('a1')\r\nSI.set_quantity_dimension(a1, units.acceleration)\r\nSI.set_quantity_scale_factor(a1, -9.8 * units.meter / units.second**2)\r\n\r\nt1 = units.Quantity('t1')\r\nSI.set_quantity_dimension(t1, units.time)\r\nSI.set_quantity_scale_factor(t1, 5 * units.second)\r\n\r\nexpr1 = a1*t1 + v1\r\nSI._collect_factor_and_dimension(expr1)\r\n```\r\nResults in:\r\n```\r\nTraceback (most recent call last):\r\n  File \"<stdin>\", line 1, in <module>\r\n  File \"C:\\Python\\Python310\\lib\\site-packages\\sympy\\physics\\units\\unitsystem.py\", line 179, in _collect_factor_and_dimension\r\n    raise ValueError(\r\nValueError: Dimension of \"v1\" is Dimension(velocity), but it should be Dimension(acceleration*time)\r\n```\n",
+    "goldPatchLines": 2,
+    "agentPatchLines": 2
+  },
+  "setup": {
+    "command": "python -m pip install -q mpmath setuptools \"pytest>=7.4,<8\"",
+    "exitCode": 0
+  },
+  "stopReason": "done",
+  "turns": 7,
+  "inputTokens": 37078,
+  "outputTokens": 1210,
+  "costUsd": 0.086256,
+  "durationSeconds": 38.1,
+  "conclusion": "Fixed `UnitSystem._collect_factor_and_dimension` in `/repo/sympy/physics/units/unitsystem.py` so that when summing terms in an `Add` expression, it checks dimension equivalence (via `equivalent_dims`, which compares dimensional dependencies) instead of strict `Dimension` object equality. This allows expressions like `acceleration*time` (which is dimensionally equivalent to `velocity`) to be correctly recognized as compatible when added together.",
+  "diff": "diff --git a/sympy/physics/units/unitsystem.py b/sympy/physics/units/unitsystem.py\nindex a436880c4b..5705c821c2 100644\n--- a/sympy/physics/units/unitsystem.py\n+++ b/sympy/physics/units/unitsystem.py\n@@ -175,7 +175,7 @@ def _collect_factor_and_dimension(self, expr):\n             for addend in expr.args[1:]:\n                 addend_factor, addend_dim = \\\n                     self._collect_factor_and_dimension(addend)\n-                if dim != addend_dim:\n+                if not self.get_dimension_system().equivalent_dims(dim, addend_dim):\n                     raise ValueError(\n                         'Dimension of \"{}\" is {}, '\n                         'but it should be {}'.format(\n",
+  "grading": {
+    "graded": true,
+    "resolved": true,
+    "command": "python -m pytest sympy/physics/units/tests/test_quantities.py -k \"test_issue_24211 or test_str_repr or test_eq or test_convert_to or test_Quantity_definition or test_abbrev or test_print or test_Quantity_eq or test_add_sub or test_quantity_abs or test_check_unit_consistency or test_mul_div or test_units or test_issue_quart or test_issue_5565 or test_find_unit or test_Quantity_derivative or test_quantity_postprocessing or test_factor_and_dimension or test_dimensional_expr_of_derivative\" -x -q -W ignore::DeprecationWarning --tb=short 2>&1",
+    "exitCode": 0,
+    "timedOut": false,
+    "failToPassCount": 1,
+    "passToPassCount": 31,
+    "testsRun": 20,
+    "output": "..................x..                                                    [100%]\n20 passed, 13 deselected, 1 xfailed in 0.44s"
+  },
+  "events": [
+    {
+      "type": "cost_update",
+      "turn": 1,
+      "delayMs": 120,
+      "data": {
+        "turn_input_tokens": 3288,
+        "turn_output_tokens": 92,
+        "turn_cost_usd": 0.0075,
+        "total_cost_usd": 0.0075,
+        "total_input_tokens": 3288,
+        "total_output_tokens": 92
+      }
+    },
+    {
+      "type": "tool_call",
+      "turn": 1,
+      "delayMs": 120,
+      "data": {
+        "tool_name": "bash",
+        "tool_id": "toolu_01QriJuGZtFcJWQeGS4DQ7rS",
+        "input": {
+          "command": "grep -n \"_collect_factor_and_dimension\" -A 40 /repo/sympy/physics/units/unitsystem.py | head -80"
+        }
+      }
+    },
+    {
+      "type": "tool_result",
+      "turn": 1,
+      "delayMs": 120,
+      "data": {
+        "tool_name": "bash",
+        "tool_id": "toolu_01QriJuGZtFcJWQeGS4DQ7rS",
+        "result": "<exit_code>0</exit_code>\n<duration_ms>61</duration_ms>\n<output>\n152:    def _collect_factor_and_dimension(self, expr):\n153-        \"\"\"\n154-        Return tuple with scale factor expression and dimension expression.\n155-        \"\"\"\n156-        from sympy.physics.units import Quantity\n157-        if isinstance(expr, Quantity):\n158-            return expr.scale_factor, expr.dimension\n159-        elif isinstance(expr, Mul):\n160-            factor = 1\n161-            dimension = Dimension(1)\n162-            for arg in expr.args:\n163:                arg_factor, arg_dim = self._collect_factor_and_dimension(arg)\n164-                factor *= arg_factor\n165-                dimension *= arg_dim\n166-            return factor, dimension\n167-        elif isinstance(expr, Pow):\n168:            factor, dim = self._collect_factor_and_dimension(expr.base)\n169:            exp_factor, exp_dim = self._collect_factor_and_dimension(expr.exp)\n170-            if self.get_dimension_system().is_dimensionless(exp_dim):\n171-                exp_dim = 1\n172-            return factor ** exp_factor, dim ** (exp_factor * exp_dim)\n173-        elif isinstance(expr, Add):\n174:            factor, dim = self._collect_factor_and_dimension(expr.args[0])\n175-            for addend in expr.args[1:]:\n176-                addend_factor, addend_dim = \\\n177:                    self._collect_factor_and_dimension(addend)\n178-                if dim != addend_dim:\n179-                    raise ValueError(\n180-                        'Dimension of \"{}\" is {}, '\n181-                        'but it should be {}'.format(\n182-                            addend, addend_dim, dim))\n183-                factor += addend_factor\n184-            return factor, dim\n185-        elif isinstance(expr, Derivative):\n186:            factor, dim = self._collect_factor_and_dimension(expr.args[0])\n187-            for independent, count in expr.variable_count:\n188:                ifactor, idim = self._collect_factor_and_dimension(independe"
+      }
+    },
+    {
+      "type": "cost_update",
+      "turn": 2,
+      "delayMs": 2200,
+      "data": {
+        "turn_input_tokens": 4459,
+        "turn_output_tokens": 140,
+        "turn_cost_usd": 0.01032,
+        "total_cost_usd": 0.01781,
+        "total_input_tokens": 7747,
+        "total_output_tokens": 232
+      }
+    },
+    {
+      "type": "tool_call",
+      "turn": 2,
+      "delayMs": 120,
+      "data": {
+        "tool_name": "bash",
+        "tool_id": "toolu_01JnhefjJ3wncvqhWwfp3Auq",
+        "input": {
+          "command": "grep -n \"equivalent_dims\\|def get_dimensional_dependencies\\|is_dimensionless\" /repo/sympy/physics/units/dimensions.py | head -30"
+        }
+      }
+    },
+    {
+      "type": "tool_result",
+      "turn": 2,
+      "delayMs": 120,
+      "data": {
+        "tool_name": "bash",
+        "tool_id": "toolu_01JnhefjJ3wncvqhWwfp3Auq",
+        "result": "<exit_code>0</exit_code>\n<duration_ms>61</duration_ms>\n<output>\n422:    def get_dimensional_dependencies(self, name, mark_dimensionless=False):\n428:    def equivalent_dims(self, dim1, dim2):\n447:    def is_dimensionless(self, dimension):\n</output>"
+      }
+    },
+    {
+      "type": "cost_update",
+      "turn": 3,
+      "delayMs": 2048,
+      "data": {
+        "turn_input_tokens": 4701,
+        "turn_output_tokens": 74,
+        "turn_cost_usd": 0.01014,
+        "total_cost_usd": 0.02796,
+        "total_input_tokens": 12448,
+        "total_output_tokens": 306
+      }
+    },
+    {
+      "type": "tool_call",
+      "turn": 3,
+      "delayMs": 120,
+      "data": {
+        "tool_name": "bash",
+        "tool_id": "toolu_01VG5KTvsZiKLQHCBKcXdeo1",
+        "input": {
+          "command": "sed -n '415,460p' /repo/sympy/physics/units/dimensions.py"
+        }
+      }
+    },
+    {
+      "type": "tool_result",
+      "turn": 3,
+      "delayMs": 120,
+      "data": {
+        "tool_name": "bash",
+        "tool_id": "toolu_01VG5KTvsZiKLQHCBKcXdeo1",
+        "result": "<exit_code>0</exit_code>\n<duration_ms>46</duration_ms>\n<output>\nelse:\n                        raise TypeError(\"The input arguments for the function {} must be dimensionless.\".format(dimension.func))\n            else:\n                return get_for_name(result)\n\n        raise TypeError(\"Type {} not implemented for get_dimensional_dependencies\".format(type(dimension.name)))\n\n    def get_dimensional_dependencies(self, name, mark_dimensionless=False):\n        dimdep = self._get_dimensional_dependencies_for_name(name)\n        if mark_dimensionless and dimdep == {}:\n            return {Dimension(1): 1}\n        return {k: v for k, v in dimdep.items()}\n\n    def equivalent_dims(self, dim1, dim2):\n        deps1 = self.get_dimensional_dependencies(dim1)\n        deps2 = self.get_dimensional_dependencies(dim2)\n        return deps1 == deps2\n\n    def extend(self, new_base_dims, new_derived_dims=(), new_dim_deps=None):\n        deps = dict(self.dimensional_dependencies)\n        if new_dim_deps:\n            deps.update(new_dim_deps)\n\n        new_dim_sys = DimensionSystem(\n            tuple(self.base_dims) + tuple(new_base_dims),\n            tuple(self.derived_dims) + tuple(new_derived_dims),\n            deps\n        )\n        new_dim_sys._quantity_dimension_map.update(self._quantity_dimension_map)\n        new_dim_sys._quantity_scale_factors.update(self._quantity_scale_factors)\n        return new_dim_sys\n\n    def is_dimensionless(self, dimension):\n        \"\"\"\n        Check if the dimension object really has a dimension.\n\n        A dimension should have at least one component with non-zero power.\n        \"\"\"\n        if dimension.name == 1:\n            return True\n        return self.get_dimensional_dependencies(dimension) == {}\n\n    @property\n    def list_can_dims(self):\n        \"\"\"\n        Useless method, kept for compatibility with previous versions.\n</output>"
+      }
+    },
+    {
+      "type": "cost_update",
+      "turn": 4,
+      "delayMs": 2200,
+      "data": {
+        "turn_input_tokens": 5502,
+        "turn_output_tokens": 298,
+        "turn_cost_usd": 0.01398,
+        "total_cost_usd": 0.04194,
+        "total_input_tokens": 17950,
+        "total_output_tokens": 604
+      }
+    },
+    {
+      "type": "thought",
+      "turn": 4,
+      "delayMs": 120,
+      "data": {
+        "text": "Now let's fix the Add branch to use equivalent_dims instead of `!=`."
+      }
+    },
+    {
+      "type": "tool_call",
+      "turn": 4,
+      "delayMs": 120,
+      "data": {
+        "tool_name": "str_replace_editor",
+        "tool_id": "toolu_01D7duTpZzbzo8Up4zHGJwpn",
+        "input": {
+          "command": "str_replace",
+          "path": "/repo/sympy/physics/units/unitsystem.py",
+          "old_str": "                addend_factor, addend_dim = \\\n                    self._collect_factor_and_dimension(addend)\n                if dim != addend_dim:\n                    raise ValueError(",
+          "new_str": "                addend_factor, addend_dim = \\\n                    self._collect_factor_and_dimension(addend)\n                if not self.get_dimension_system().equivalent_dims(dim, addend_dim):\n                    raise ValueError("
+        }
+      }
+    },
+    {
+      "type": "tool_result",
+      "turn": 4,
+      "delayMs": 120,
+      "data": {
+        "tool_name": "str_replace_editor",
+        "tool_id": "toolu_01D7duTpZzbzo8Up4zHGJwpn",
+        "result": "Replaced in /repo/sympy/physics/units/unitsystem.py: 4 line(s) \u2192 4 line(s).\nUse undo_edit to revert if needed."
+      }
+    },
+    {
+      "type": "cost_update",
+      "turn": 5,
+      "delayMs": 2200,
+      "data": {
+        "turn_input_tokens": 5861,
+        "turn_output_tokens": 331,
+        "turn_cost_usd": 0.01503,
+        "total_cost_usd": 0.05697,
+        "total_input_tokens": 23811,
+        "total_output_tokens": 935
+      }
+    },
+    {
+      "type": "tool_call",
+      "turn": 5,
+      "delayMs": 120,
+      "data": {
+        "tool_name": "bash",
+        "tool_id": "toolu_01Csr3P8ZBUpZaPKT42zUJJq",
+        "input": {
+          "command": "cd /repo && python -c \"\nfrom sympy.physics import units\nfrom sympy.physics.units.systems.si import SI\n\nv1 = units.Quantity('v1')\nSI.set_quantity_dimension(v1, units.velocity)\nSI.set_quantity_scale_factor(v1, 2 * units.meter / units.second)\n\na1 = units.Quantity('a1')\nSI.set_quantity_dimension(a1, units.acceleration)\nSI.set_quantity_scale_factor(a1, -9.8 * units.meter / units.second**2)\n\nt1 = units.Quantity('t1')\nSI.set_quantity_dimension(t1, units.time)\nSI.set_quantity_scale_factor(t1, 5 * units.second)\n\nexpr1 = a1*t1 + v1\nprint(SI._collect_factor_and_dimension(expr1))\n\"\n"
+        }
+      }
+    },
+    {
+      "type": "tool_result",
+      "turn": 5,
+      "delayMs": 2200,
+      "data": {
+        "tool_name": "bash",
+        "tool_id": "toolu_01Csr3P8ZBUpZaPKT42zUJJq",
+        "result": "<exit_code>0</exit_code>\n<duration_ms>11531</duration_ms>\n<output>\n(-47.0000000000000, Dimension(acceleration*time))\n</output>"
+      }
+    },
+    {
+      "type": "cost_update",
+      "turn": 6,
+      "delayMs": 1573,
+      "data": {
+        "turn_input_tokens": 6280,
+        "turn_output_tokens": 94,
+        "turn_cost_usd": 0.0135,
+        "total_cost_usd": 0.07047,
+        "total_input_tokens": 30091,
+        "total_output_tokens": 1029
+      }
+    },
+    {
+      "type": "thought",
+      "turn": 6,
+      "delayMs": 120,
+      "data": {
+        "text": "Now run the test suite for units."
+      }
+    },
+    {
+      "type": "tool_call",
+      "turn": 6,
+      "delayMs": 120,
+      "data": {
+        "tool_name": "bash",
+        "tool_id": "toolu_019gBBA4moT8jZ2png5JVhjQ",
+        "input": {
+          "command": "cd /repo && python -m pytest sympy/physics/units/tests/ -q 2>&1 | tail -30"
+        }
+      }
+    },
+    {
+      "type": "tool_result",
+      "turn": 6,
+      "delayMs": 2200,
+      "data": {
+        "tool_name": "bash",
+        "tool_id": "toolu_019gBBA4moT8jZ2png5JVhjQ",
+        "result": "<exit_code>0</exit_code>\n<duration_ms>2875</duration_ms>\n<output>\n.....................................x.................................. [100%]\n============================== warnings summary ===============================\n..\\venv\\Lib\\site-packages\\mpmath\\ctx_mp.py:35\n  <HOME>\\AppData\\Local\\Temp\\swe-agent-7e913548-8rwntr7z\\venv\\Lib\\site-packages\\mpmath\\ctx_mp.py:35: DeprecationWarning: mpnumeric is deprecated\n    warnings.warn(f\"{name} is deprecated\", DeprecationWarning)\n\n..\\venv\\Lib\\site-packages\\mpmath\\rational.py:4\n..\\venv\\Lib\\site-packages\\mpmath\\rational.py:4\n..\\venv\\Lib\\site-packages\\mpmath\\rational.py:4\n  <HOME>\\AppData\\Local\\Temp\\swe-agent-7e913548-8rwntr7z\\venv\\Lib\\site-packages\\mpmath\\rational.py:4: DeprecationWarning: the rational private module is deprecated\n    warnings.warn(\"the rational private module is deprecated\",\n\nsympy/physics/units/tests/test_dimensions.py::test_Dimension_mul_div_exp\n  <HOME>\\AppData\\Local\\Temp\\swe-agent-7e913548-8rwntr7z\\venv\\Lib\\site-packages\\mpmath\\libmp\\libintmath.py:75: DeprecationWarning: bitcount function is deprecated\n    warnings.warn(\"bitcount function is deprecated\",\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n71 passed, 1 xfailed, 5 warnings in 1.94s\n</output>"
+      }
+    },
+    {
+      "type": "cost_update",
+      "turn": 7,
+      "delayMs": 2200,
+      "data": {
+        "turn_input_tokens": 6987,
+        "turn_output_tokens": 181,
+        "turn_cost_usd": 0.01578,
+        "total_cost_usd": 0.08626,
+        "total_input_tokens": 37078,
+        "total_output_tokens": 1210
+      }
+    },
+    {
+      "type": "thought",
+      "turn": 7,
+      "delayMs": 120,
+      "data": {
+        "text": "All tests pass.\n\n<DONE>Fixed `UnitSystem._collect_factor_and_dimension` in `/repo/sympy/physics/units/unitsystem.py` so that when summing terms in an `Add` expression, it checks dimension equivalence (via `equivalent_dims`, which compares dimensional dependencies) instead of strict `Dimension` object equality. This allows expressions like `acceleration*time` (which is dimensionally equivalent to `velocity`) to be correctly recognized as compatible when added together.</DONE>"
+      }
+    },
+    {
+      "type": "done",
+      "turn": 7,
+      "delayMs": 163,
+      "data": {
+        "stop_reason": "done",
+        "conclusion": "Fixed `UnitSystem._collect_factor_and_dimension` in `/repo/sympy/physics/units/unitsystem.py` so that when summing terms in an `Add` expression, it checks dimension equivalence (via `equivalent_dims`, which compares dimensional dependencies) instead of strict `Dimension` object equality. This allows expressions like `acceleration*time` (which is dimensionally equivalent to `velocity`) to be correctly recognized as compatible when added together.",
+        "turns": 7,
+        "total_cost_usd": 0.08626,
+        "total_input_tokens": 37078,
+        "total_output_tokens": 1210,
+        "duration_seconds": 38.1,
+        "diff_lines": 13
+      }
+    }
+  ]
+}
