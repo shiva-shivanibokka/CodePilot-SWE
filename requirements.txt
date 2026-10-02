@@ -3,6 +3,8 @@ litellm>=1.60.0
 langgraph>=0.2.0
 langchain-core>=0.3.0
 pydantic>=2.7.0
+# BM25 ranking for the search_code tool
+rank-bm25>=0.2.2
 python-dotenv>=1.0.0
 
 # Local browser UI (optional; the CLI is the primary interface)

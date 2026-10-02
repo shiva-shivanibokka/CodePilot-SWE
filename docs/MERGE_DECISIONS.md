@@ -117,3 +117,84 @@ always `ANTHROPIC_API_KEY`.
 **Evidence.** `tests/test_llm.py::test_the_cli_names_the_key_the_chosen_model_needs`,
 `tests/test_doctor.py` (unchanged, still passes: the default model is still
 `claude-opus-5`, so the variable is still `ANTHROPIC_API_KEY` there).
+
+## D5. Local sandbox: process-tree kill on timeout (bug reproduced, fixed)
+
+**What.** `codepilot/sandbox/local.py` now runs commands through
+`_run_with_deadline` / `_kill_tree`, ported from
+`B:sandbox/local_workspace.py`. A timed-out command reports exit 124 (as
+coreutils `timeout` and the Docker backend do) instead of -1.
+
+**Reproduced first.** A command whose child spawns a grandchild that keeps
+stdout open, run with `timeout_seconds=2`, took **21.2 s** with A's
+`subprocess.run(timeout=...)` (scratch script), and **31.3 s** in
+`tests/test_local_sandbox.py::test_a_timeout_kills_the_whole_process_tree`
+before the fix. After: passes in under 3 s.
+
+**Compared.** A's sandbox had interpreter normalisation and was already the
+agent's backend; B's had the tree kill, env scrubbing and a bash requirement.
+A's class is kept and gains B's three behaviours as options
+(`scrub_secrets`, `shell`, `python`, `path_prefix`) so the interactive CLI's
+behaviour is unchanged by default. B's `/repo` path virtualisation is **not**
+ported: CodePilot's tools use repository-relative paths, so there is nothing
+to translate.
+
+**Tests.** `tests/test_local_sandbox.py` (5 tests; the scrubbing test is B's
+`test_provider_keys_are_stripped_from_the_child_environment`, rewritten
+against the new class).
+
+## D6. Denylist gains B's local-backend refusals (gap reproduced, fixed)
+
+**What.** `DEFAULT_DENIED` in `codepilot/permissions.py` gains `sudo`,
+`wget … | sh`, `rm -r ~` / `$HOME`, `halt`, `poweroff`.
+
+**Reproduced first.** B's refusal cases, ported as
+`tests/test_permissions.py::test_catastrophic_commands_are_refused_even_when_auto_approved`:
+4 of 8 were *allowed* under `auto_approve=True` before the change (`sudo pip
+install foo`, `wget … | sh`, `rm -rf ~`, `halt`). The benchmark auto-approves,
+so on the no-Docker backend these would have run on the host. B's
+"ordinary commands are allowed" cases are ported too, so the list did not grow
+into blocking normal work (`rm -rf build/` still runs).
+
+## D7. `read_file` takes a line range
+
+**What.** Optional `start_line` / `end_line` on `read_file`.
+
+**Why.** `_truncate` keeps the head and tail of long output, so the middle of a
+file longer than ~12k characters could not be read at all. SWE-bench
+repositories routinely have files of several thousand lines. B's editor had
+`view_range` for this (`B:agent/tools/editor.py::_view`).
+
+**Reproduced first.** `tests/test_tools.py::test_the_middle_of_a_large_file_can_be_read`
+failed with "unexpected keyword argument 'start_line'"; passes after.
+The ledger still hashes the whole file, so a partial read permits an exact-
+string edit (`test_a_partial_read_still_allows_an_edit`).
+
+## D8. BM25 search ported as `search_code`
+
+**What.** `B:agent/tools/search.py` moved (with history) to
+`codepilot/search_index.py` and rewritten; registered as the `search_code`
+tool beside A's regex `search`.
+
+**Kept from B.** BM25 over 30-line chunks; the cache keyed by file pattern
+(B's own regression fix, `B:tests/test_regressions.py::TestSearchIndexCacheKey`).
+
+**Changed, with reasons.**
+- Files come from `Workspace.list_files()` and are read directly, instead of
+  one `cat` subprocess per file through a POSIX shell.
+- Embedding blend dropped: B used sentence-transformers only if installed,
+  which makes ranking depend on the machine. Reproducibility of benchmark
+  runs outweighs it; nothing in B measured the embedding half's benefit.
+- `BM25Plus` instead of `BM25Okapi`. Reproduced: with Okapi, a one-chunk
+  corpus (a narrow `file_pattern`, a small repo) scored the exact match 0 and
+  the tool answered "No results" — the first run of
+  `test_search_code_does_not_answer_from_files_as_they_were` failed that way.
+- The cache is cleared by every edit. In B the index was built once per task
+  and only cleared at teardown (`B:agent/loop.py`, `finally: clear_index`), so
+  searches after an edit answered from pre-edit contents (from reading the
+  code; covered by the test above).
+
+**Effect on A's old experiments.** `search_code` is a new tool, so a
+configuration that passes `tool_names=None` (all tools) now offers one more
+tool than when A's committed results were measured. The experiments that
+restrict the tool set (edit-style, retrieval) are unaffected.

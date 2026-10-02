@@ -47,6 +47,10 @@ class ToolContext:
     final_message: str = ""
     #: Set by `propose_plan`, rendered by the CLI.
     plan: list[str] = field(default_factory=list)
+    #: `search_code` indexes, keyed by file pattern. Cleared on every edit so a
+    #: search never answers from files as they were before the agent changed
+    #: them.
+    search_cache: dict[str | None, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -114,17 +118,28 @@ def _truncate(text: str, limit: int = MAX_TOOL_OUTPUT) -> str:
 @tool(
     "read_file",
     "Read a file from the repository. Read a file before editing it — edits to "
-    "a file you have not read are refused.",
-    {"path": {"type": "string", "description": "Path relative to the repository root"}},
+    "a file you have not read are refused. Long output is cut in the middle; "
+    "pass start_line/end_line to read a specific range of a large file.",
+    {
+        "path": {"type": "string", "description": "Path relative to the repository root"},
+        "start_line": {"type": "integer", "description": "First line to show (1-based)"},
+        "end_line": {"type": "integer", "description": "Last line to show, inclusive"},
+    },
     ["path"],
     read_only=True,
 )
-async def read_file(ctx: ToolContext, path: str) -> str:
+async def read_file(
+    ctx: ToolContext, path: str, start_line: int | None = None, end_line: int | None = None
+) -> str:
+    # The whole file is read either way, so the read ledger records the hash of
+    # what is on disk: edits match exact strings, not line numbers.
     content = ctx.workspace.read(path)
-    numbered = "\n".join(
-        f"{i:5d} | {line}" for i, line in enumerate(content.splitlines(), 1)
-    )
-    return _truncate(f"{path} ({content.count(chr(10)) + 1} lines)\n\n{numbered}")
+    lines = content.splitlines()
+    first = max(1, int(start_line or 1))
+    last = min(len(lines), int(end_line or len(lines)))
+    numbered = "\n".join(f"{i:5d} | {lines[i - 1]}" for i in range(first, last + 1))
+    span = "" if (first, last) == (1, len(lines)) else f", showing {first}-{last}"
+    return _truncate(f"{path} ({content.count(chr(10)) + 1} lines{span})\n\n{numbered}")
 
 
 @tool(
@@ -180,6 +195,7 @@ async def write_file(ctx: ToolContext, path: str, content: str) -> str:
 
 
 def _emit_diff(ctx: ToolContext, path: str, before: str, after: str) -> None:
+    ctx.search_cache.clear()
     diff = "".join(
         difflib.unified_diff(
             before.splitlines(keepends=True),
@@ -256,6 +272,35 @@ async def search(ctx: ToolContext, pattern: str, glob: str = "*") -> str:
                         "\n".join(hits) + "\n[stopped at 200 matches — narrow the pattern]"
                     )
     return _truncate("\n".join(hits)) if hits else f"No matches for {pattern!r}."
+
+
+@tool(
+    "search_code",
+    "Ranked keyword search (BM25) over the repository's Python files, or over "
+    "files matching `file_pattern`. Use it when you have an issue's words but "
+    "not an exact string: it returns the 30-line chunks most about the query. "
+    "For an exact identifier or regex, `search` is better.",
+    {
+        "query": {"type": "string", "description": "Words or identifiers to look for"},
+        "file_pattern": {"type": "string", "description": "Glob such as test_*.py"},
+        "top_k": {"type": "integer", "description": "How many chunks (default 8)"},
+    },
+    ["query"],
+    read_only=True,
+)
+async def search_code(
+    ctx: ToolContext, query: str, file_pattern: str | None = None, top_k: int = 8
+) -> str:
+    from codepilot.search_index import SearchIndex, render
+
+    key = file_pattern or None
+    index = ctx.search_cache.get(key)
+    if index is None:
+        index = SearchIndex.build(ctx.workspace.root, ctx.workspace.list_files(), key)
+        ctx.search_cache[key] = index
+    if not index.chunks:
+        return "No indexable files matched."
+    return _truncate(render(query, index.search(query, max(1, min(int(top_k), 30))), index.truncated))
 
 
 # ---------------------------------------------------------------------------

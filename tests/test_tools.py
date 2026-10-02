@@ -185,3 +185,71 @@ async def test_a_failing_suite_starts_a_debugging_turn(ctx):
     )
     await call(ctx, "run_tests", command="pytest -q")
     assert ctx.debugging is True, "a real failure should protect the test files"
+
+
+# ------------------------------------------------------------ large files
+#
+# read_file truncates to MAX_TOOL_OUTPUT by keeping the head and the tail. On a
+# file of a few thousand lines — routine in SWE-bench repositories — the middle
+# was unreachable: there was no way to ask for it. Autonomous-SWE-Agent's editor
+# had `view_range` for exactly this (B:agent/tools/editor.py::_view).
+
+
+@pytest.mark.asyncio
+async def test_the_middle_of_a_large_file_can_be_read(ctx):
+    lines = [f"value_{i} = {i}" for i in range(1, 3001)]
+    (ctx.workspace.root / "big.py").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    result = await call(ctx, "read_file", path="big.py", start_line=1500, end_line=1502)
+    text = result["content"]
+    assert not result.get("is_error"), text
+    assert " 1500 | value_1500 = 1500" in text
+    assert "value_1503" not in text
+    assert "value_1 = 1" not in text
+
+
+@pytest.mark.asyncio
+async def test_a_partial_read_still_allows_an_edit(ctx):
+    """Edits match exact strings, so the ledger records the whole file's hash
+    even when only a range was shown."""
+    await call(ctx, "read_file", path="fib.py", start_line=2, end_line=2)
+    result = await call(ctx, "edit_file", path="fib.py", old="return n", new="return n + 1")
+    assert not result.get("is_error"), result["content"]
+
+
+# ------------------------------------------------------------ search_code
+#
+# BM25 search, ported from Autonomous-SWE-Agent's search_codebase.
+
+
+@pytest.mark.asyncio
+async def test_search_code_ranks_the_chunk_about_the_query_first(ctx):
+    root = ctx.workspace.root
+    (root / "config.py").write_text(
+        "class Config:\n    def from_file(self, filename, load, silent=False):\n"
+        "        with open(filename) as f:\n            return load(f)\n",
+        encoding="utf-8",
+    )
+    (root / "colors.py").write_text("RED = 1\nGREEN = 2\nBLUE = 3\n", encoding="utf-8")
+    result = await call(ctx, "search_code", query="Config from_file open mode")
+    first = result["content"].split("[1] ", 1)[1].splitlines()[0]
+    assert first.startswith("config.py:1"), result["content"]
+
+
+@pytest.mark.asyncio
+async def test_search_code_does_not_answer_from_files_as_they_were(ctx):
+    """B's index was built once per task and kept serving pre-edit contents."""
+    await call(ctx, "search_code", query="fib")  # builds and caches the index
+    await call(ctx, "read_file", path="fib.py")
+    await call(ctx, "edit_file", path="fib.py", old="return n", new="return quux_marker")
+    result = await call(ctx, "search_code", query="quux_marker")
+    assert "fib.py" in result["content"], result["content"]
+
+
+@pytest.mark.asyncio
+async def test_search_code_keeps_one_index_per_file_pattern(ctx):
+    """B's cache bug: an index built for test_*.py answered unrestricted searches."""
+    (ctx.workspace.root / "test_fib.py").write_text("def test_fib():\n    assert True\n", encoding="utf-8")
+    only_tests = await call(ctx, "search_code", query="fib", file_pattern="test_*.py")
+    everything = await call(ctx, "search_code", query="fib")
+    assert "fib.py:1" not in only_tests["content"].replace("test_fib.py", "")
+    assert "fib.py:1" in everything["content"].replace("test_fib.py", "")

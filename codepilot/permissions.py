@@ -47,8 +47,14 @@ DEFAULT_DENIED = [
     re.compile(r"\bdd\s+.*\bof=/dev/"),
     re.compile(r":\(\)\s*\{.*\|.*&\s*\}\s*;"),  # fork bomb
     re.compile(r"\bgit\s+push\b.*--force"),
-    re.compile(r"\bshutdown\b|\breboot\b"),
+    re.compile(r"\bshutdown\b|\breboot\b|\bhalt\b|\bpoweroff\b"),
     re.compile(r"\bcurl\b.*\|\s*(ba)?sh\b"),  # pipe-to-shell
+    # From Autonomous-SWE-Agent's local-backend refusal list. The benchmark's
+    # no-Docker mode auto-approves everything else and has no container
+    # around it, so these are the only thing between a model and the host.
+    re.compile(r"\bwget\b.*\|\s*(ba)?sh\b"),
+    re.compile(r"\bsudo\b"),
+    re.compile(r"\brm\s+-[a-zA-Z]*r[a-zA-Z]*\s+(~|\$HOME)(/|\s|$)"),  # rm -rf ~
 ]
 
 
