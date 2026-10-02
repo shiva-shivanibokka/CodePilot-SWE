@@ -56,7 +56,16 @@ class DockerSandbox:
         cpus: int = 1,
         network: str = "none",
         mount: Path | None = None,
+        workdir: str = WORKDIR,
+        prefix: str = "",
     ) -> None:
+        """
+        `workdir` is where the mount lands and commands run; `prefix` is shell
+        put before every command. The benchmark uses both to run inside an
+        official SWE-bench image: the task checkout mounted at /testbed, and
+        the image's conda environment first on PATH so `python` is the one the
+        image prepared.
+        """
         try:
             import docker  # noqa: PLC0415 - optional dependency, only for evals
         except ImportError as exc:
@@ -76,6 +85,8 @@ class DockerSandbox:
         self._mount = Path(mount).resolve() if mount is not None else None
         if self._mount is not None and not self._mount.is_dir():
             raise DockerUnavailable(f"nothing to mount at {self._mount}")
+        self._workdir = workdir
+        self._prefix = prefix
         self._container = None
         self.id = uuid.uuid4().hex[:12]
 
@@ -87,13 +98,14 @@ class DockerSandbox:
         write the agent makes is denied — which surfaces as the agent
         reporting that it cannot edit its own repository.
         """
+        workdir = getattr(self, "_workdir", WORKDIR)
         if self._mount is None:
             return {
                 "user": "nobody",
-                "tmpfs": {WORKDIR: "size=256m,uid=65534,mode=1777"},
+                "tmpfs": {workdir: "size=256m,uid=65534,mode=1777"},
             }
         options: dict = {
-            "volumes": {str(self._mount): {"bind": WORKDIR, "mode": "rw"}},
+            "volumes": {str(self._mount): {"bind": workdir, "mode": "rw"}},
         }
         if hasattr(os, "getuid"):
             options["user"] = f"{os.getuid()}:{os.getgid()}"
@@ -109,7 +121,7 @@ class DockerSandbox:
                 mem_limit=self._memory,
                 nano_cpus=self._cpus * 1_000_000_000,
                 network_mode=self._network,
-                working_dir=WORKDIR,
+                working_dir=self._workdir,
                 name=f"codepilot_{self.id}",
                 **self._filesystem_options(),
             )
@@ -137,18 +149,19 @@ class DockerSandbox:
             info.mode = 0o644
             tar.addfile(info, io.BytesIO(data))
         payload = buf.getvalue()
-        await asyncio.to_thread(self._container.put_archive, WORKDIR, payload)
+        await asyncio.to_thread(self._container.put_archive, self._workdir, payload)
 
     async def run(self, command: str, timeout_seconds: int = 60) -> CommandResult:
         if self._container is None:
             raise DockerUnavailable("container not started — call start() first")
         started = time.monotonic()
         # The kernel enforces this, so a runaway loop actually dies.
-        wrapped = f"timeout -k 2 {timeout_seconds} sh -c {shlex.quote(command)}"
+        body = f"{self._prefix}{command}"
+        wrapped = f"timeout -k 2 {timeout_seconds} sh -c {shlex.quote(body)}"
 
         def _exec():
             return self._container.exec_run(
-                cmd=["sh", "-c", wrapped], workdir=WORKDIR, demux=True
+                cmd=["sh", "-c", wrapped], workdir=self._workdir, demux=True
             )
 
         result = await asyncio.to_thread(_exec)
@@ -163,6 +176,24 @@ class DockerSandbox:
             duration_ms=int((time.monotonic() - started) * 1000),
             timed_out=timed_out,
         )
+
+    async def disconnect_network(self) -> None:
+        """Take the running container off every network.
+
+        The benchmark starts a container with a network so setup can install
+        dependencies, then calls this before the agent gets a turn: the model
+        never runs a command with network access.
+        """
+        if self._container is None:
+            raise DockerUnavailable("container not started — call start() first")
+
+        def _disconnect():
+            self._container.reload()
+            for name in list(self._container.attrs["NetworkSettings"]["Networks"]):
+                self._docker.networks.get(name).disconnect(self._container, force=True)
+
+        await asyncio.to_thread(_disconnect)
+        self._network = "none"
 
     async def run_tests(
         self, command: str = "pytest -q", timeout_seconds: int = 300

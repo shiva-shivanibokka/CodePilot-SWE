@@ -198,3 +198,94 @@ tool beside A's regex `search`.
 configuration that passes `tool_names=None` (all tools) now offers one more
 tool than when A's committed results were measured. The experiments that
 restrict the tool set (edit-style, retrieval) are unaffected.
+
+Note on D8: the rewrite of `search_index.py` exceeds git's rename-similarity
+threshold, so `git log --follow codepilot/search_index.py` stops at the merge.
+The original is `swe/agent/tools/search.py` at commit `69fe4a9`.
+
+## D9. Benchmark grading: three leaks closed, each reproduced first
+
+All three were reproduced against B's code extracted unmodified from this
+repository's history (`git archive 9fd0895`) into a scratch directory, run
+with `PYTHONDONTWRITEBYTECODE=1` so nothing was written beside it.
+
+1. **Clone-history leakage.** On a two-commit fixture (base, then the fix),
+   `B:sandbox/workspace.py::clone_repo(url, base, dest)` produced a checkout
+   where `git cat-file -e <fix>` succeeded, `git remote -v` listed `origin`,
+   and `git log --all` printed the fix commit. Replaced by
+   `codepilot/bench/checkout.py::clone_at`: `git init` + `fetch --depth=1` of
+   the one commit by URL, `FETCH_HEAD` deleted, then `assert_isolated` (no
+   remotes, every ref inside HEAD's history). Proof:
+   `tests/test_bench_checkout.py::test_the_gold_fix_commit_is_unreachable`
+   and three neighbours.
+2. **The 20-test cap.** `B:eval/harness.py::build_test_command` with 25 node
+   ids put 20 in the command (`MAX_GRADED_TESTS = 20`). Removed; proof:
+   `tests/test_bench_grading.py::test_every_required_test_is_graded_no_cap`
+   (25th id is a missing test, and the instance fails).
+3. **`-k` substring matching.** With `FAIL_TO_PASS = ["test_issue_1"]` and a
+   file containing only a passing `test_issue_10`, B's command
+   `pytest tests/test_m.py -k "test_issue_1" -x` ran `test_issue_10`, exited
+   0, and graded RESOLVED. Replaced by running the target files whole with
+   `-rA -v`, parsing per-test outcomes (`codepilot/bench/testlog.py`) and
+   looking up every id exactly (`testlog.lookup`). Proof:
+   `test_a_required_test_that_never_ran_is_a_failure_not_a_pass` and
+   `tests/test_bench_testlog.py`.
+
+Also from the same review of `grade()`:
+
+4. **`-x` in grading and validation.** Reproduced for validation: with one
+   pre-existing failure collected first, B's regression command
+   (`pytest -x -q`) measured `(passed, failed, errors) = (0, 1, 0)` for both a
+   correct candidate and one that breaks another test — indistinguishable, and
+   both rejected by B's `passed > 0` rule. No `-x` anywhere in the merged
+   benchmark (`test_the_graded_command_has_no_exitfirst_no_k_and_no_cap`).
+5. **Grading in the agent's tree.** B applied the test patch on top of the
+   agent's working tree; A's eval wrote held-out tests into it. Now
+   `swebench.grade` restores the checkout to its baseline
+   (`checkout.restore_pristine`), applies only the agent's diff filtered by
+   `codepilot/bench/grading.py::filter_source_diff` (drops test files,
+   `conftest.py`, pytest config, start-up hooks, and files the test patch
+   touches), then the test patch. Proof:
+   `test_an_agent_written_conftest_cannot_flip_the_result` first shows the
+   conftest attack *works* when live (the held-out test reports PASSED with no
+   fix), then that grading does not resolve. Also
+   `test_a_conftest_hidden_in_an_ignored_directory_is_removed` and
+   `test_an_agent_that_deletes_the_failing_test_gains_nothing`. Positive
+   control: `test_the_gold_patch_resolves`.
+
+Django support (`testlog.parse_django`, `build_test_spec` running
+`tests/runtests.py --verbosity 2`) follows SWE-bench's own approach and is
+unit-tested on log text only; no Django instance has been run end to end here.
+
+**Kept from B unchanged:** the HTTP dataset loader and the difficulty-label
+loader (`codepilot/bench/swebench.py`).
+
+## D10. One benchmark workspace interface
+
+**What.** `codepilot/bench/environment.py::BenchEnv` replaces B's
+`LocalWorkspace` / `DockerWorkspace` pair and B's `/repo` path convention. The
+checkout is always on the host (so CodePilot's `Workspace` and the git-based
+diff/restore/grading are backend-independent); commands go through
+CodePilot's `Sandbox` protocol — `LocalSandbox` (per-task venv, bash, keys
+scrubbed) or `DockerSandbox` (checkout bind-mounted).
+
+**Compared.** B's Docker backend copied the repo into the container with tar
+and ran `pip install -e .` inside a container started with `network_mode=
+"none"` (`B:sandbox/docker_workspace.py`, `_setup_repo`), so the install could
+not download anything; B's own `--backend local` was what its recordings used.
+Here the container starts on a network for setup and is disconnected
+(`DockerSandbox.disconnect_network`) before the agent's first command. With an
+official SWE-bench image the checkout is mounted over `/testbed` and the
+image's conda env is put first on PATH.
+
+**Evidence.** `tests/test_bench_grading.py::test_docker_backend_grades_the_same_way_with_no_network`
+(opt-in; run here with the locally present
+`swebench/sweb.eval.x86_64.pallets_1776_flask-4992` image: a socket connect
+from inside fails, the gold patch resolves, the empty patch does not). The
+first attempt used conda's `activate` script, which does not run under `sh`;
+the test caught it (`No module named pytest`) and PATH selection replaced it.
+
+**Ported from B's local backend into `LocalSandbox`** (D5): tree kill,
+scrubbing, bash. **Not ported:** B's `/repo` virtual root and output path
+rewriting (no longer needed), B's tar-based file I/O (the checkout is on the
+host).
