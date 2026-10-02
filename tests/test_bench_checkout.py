@@ -113,3 +113,12 @@ def test_restore_returns_the_exact_baseline(tmp_path, task):
 def test_changed_lines_counts_edits_not_diff_length():
     diff = "--- a/x.py\n+++ b/x.py\n@@ -1,3 +1,3 @@\n a\n-b\n+c\n d\n"
     assert checkout.changed_lines(diff) == 2
+
+
+def test_the_checkout_holds_the_repositorys_bytes_whatever_autocrlf_says(tmp_path, task):
+    """On a Windows machine with core.autocrlf=true (this one), a plain
+    checkout rewrites LF files as CRLF."""
+    instance, _ = task
+    dest = tmp_path / "checkout"
+    checkout.clone_at(instance["repo_url"], instance["base_commit"], dest)
+    assert b"\r\n" not in (dest / "calc.py").read_bytes()

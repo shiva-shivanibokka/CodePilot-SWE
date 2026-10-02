@@ -202,3 +202,13 @@ async def test_docker_backend_grades_the_same_way_with_no_network(tmp_path):
         assert not (await swebench.grade(env, instance, "")).resolved
     finally:
         await env.close()
+
+
+def test_no_timeout_flag():
+    """Ported from B (tests/test_harness.py::test_no_timeout_flag): --timeout
+    needs pytest-timeout, which target repositories rarely install, and pytest
+    exits 4 on an unknown argument. The sandbox enforces the deadline instead."""
+    spec = swebench.build_test_spec(
+        {"FAIL_TO_PASS": json.dumps(["tests/test_a.py::test_1"]), "PASS_TO_PASS": "[]"}
+    )
+    assert "--timeout" not in spec.command

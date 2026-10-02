@@ -51,6 +51,7 @@ class AgentLoop:
         tool_names: list[str] | None = None,
         effort: str | None = "high",
         model: str | None = None,
+        temperature: float | None = None,
     ) -> None:
         self.client = client
         self.ctx = ctx
@@ -60,6 +61,9 @@ class AgentLoop:
         self.tools = schemas(tool_names)
         self.effort = effort
         self.model = model
+        #: None leaves the provider's default. The benchmark sets it so the
+        #: agent's attempts follow the same schedule as agentless's samples.
+        self.temperature = temperature
 
     async def run(self, task: str) -> TurnResult:
         events = self.ctx.events
@@ -108,6 +112,7 @@ class AgentLoop:
                 tools=self.tools,
                 model=self.model,
                 effort=self.effort,
+                **({"temperature": self.temperature} if self.temperature is not None else {}),
             )
             steps += 1
             self.budget.record(
@@ -125,6 +130,7 @@ class AgentLoop:
                 input_tokens=reply.usage.input_tokens,
                 output_tokens=reply.usage.output_tokens,
                 cache_read=reply.usage.cache_read_tokens,
+                cache_write=reply.usage.cache_write_tokens,
                 model=reply.model,
             )
 

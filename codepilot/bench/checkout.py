@@ -77,7 +77,12 @@ def clone_at(repo_url: str, commit: str, dest: Path | str) -> str:
     dest = Path(dest)
     dest.mkdir(parents=True, exist_ok=False)
     git(dest, "init", "-q")
-    fetched = git(dest, "fetch", "-q", "--depth=1", "--no-tags", repo_url, commit, check=False)
+    # The working tree holds the repository's bytes, whatever this machine's
+    # global core.autocrlf says: on Windows with autocrlf=true every file would
+    # otherwise be checked out CRLF, which is not the tree the tests were
+    # written against.
+    git(dest, "config", "core.autocrlf", "false")
+    fetched =git(dest, "fetch", "-q", "--depth=1", "--no-tags", repo_url, commit, check=False)
     if fetched.returncode != 0:
         with tempfile.TemporaryDirectory(prefix="bench-full-") as tmp:
             full = Path(tmp) / "full"

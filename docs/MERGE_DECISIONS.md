@@ -308,3 +308,67 @@ working tree holds the repository's bytes regardless of the machine's global
 setting (this machine checks LF files out as CRLF: `file` reported CRLF for
 A's own sources right after the clone in D1).
 `tests/test_bench_checkout.py::test_the_checkout_holds_the_repositorys_bytes_whatever_autocrlf_says`.
+
+## D12. Agentless arm on the shared substrate; validation replaced by shared selection
+
+**What.** `swe/agentless/{localize,repair,pipeline}.py` moved to
+`codepilot/bench/agentless/` and rewritten on CodePilot's `LLMClient`;
+`swe/agentless/validate.py` removed and replaced by
+`codepilot/bench/selection.py`, which both arms use. `extract_json` moved
+verbatim from `B:agent/llm.py` to `codepilot/bench/agentless/jsonx.py`
+(diffed against `git show 9fd0895:agent/llm.py`: identical body).
+
+**Compared, and what changed.**
+
+| | B | merged | evidence |
+|---|---|---|---|
+| repo map | `find` + one `grep` subprocess per file via bash | reads files from `Workspace.list_files()` | — |
+| sample count | `num_samples // len(locations)` per location: 10 over 3 locations = 9 (by B's code, `repair.py`) | dealt round robin, exactly N | `test_budget_matched_selection_is_not_first_that_breaks_nothing` asserts 3 repair calls for N=3 |
+| candidate artefact | whole patched file, written over the original | git diff of the checkout, written through `Workspace` (keeps line endings) | `test_both_arms_resolve_through_the_real_harness` |
+| validation | in order, **stop at first "valid"** (`if val.valid: break`), validity from pass/fail **counts** under `-x` | every candidate evaluated; regressions by test id; majority vote over `ast`-normalised results; fallback recorded | D9 item 4; `tests/test_agentless.py::TestRegressionsByTestId` |
+| regression scope | `tests_near` (B) | kept as `nearest_test_dirs` | `test_the_tests_nearest_a_changed_file_are_chosen` |
+
+B's count rule also accepted a candidate that fixes one test and breaks
+another (counts unchanged); `test_a_swap_that_nets_to_zero_is_still_caught`.
+One behaviour deliberately differs from B: a run that collects no tests is
+not grounds to reject a candidate (B's `passed > 0` rejected every candidate in
+a directory without tests). There is then no regression evidence, and the
+selection basis says so.
+
+**Not implemented.** Agentless's reproduction-test generation. Documented in
+`selection.py` and in the study plan.
+
+B's tracing/metrics calls inside these modules were removed with them (see
+D15 for observability).
+
+## D13. Same prompt base, same caching, same sampling schedule for all arms
+
+`codepilot/bench/prompts.py`: every request's single system block starts with
+`SHARED_BASE` and carries the one cache breakpoint. The arm-specific text, the
+user message, tools, turn structure and temperature are tabulated in that
+module's docstring. Agent attempt k and agentless sample k use the same
+temperature (0.2 for the first, 1.0 after); `AgentLoop` gained an optional
+`temperature` for this. Proof: `tests/test_bench_e2e.py::test_every_arm_gets_the_same_system_prompt_base`.
+
+Known asymmetry, stated rather than hidden: the agent's requests also carry
+the tool schemas, which sit in front of the system prompt in the cached
+prefix; agentless requests carry none. `effort` is `None` for every arm.
+
+## D14. Harness, budget-matched mode, CLI
+
+`codepilot/bench/harness.py` runs all arms on one `BenchEnv` per instance
+(clone and setup once, restore before every attempt/sample/grade).
+`--attempts N` gives N agent attempts vs N agentless samples, both through
+`selection.select`; N=1 submits the single diff. Budget-matched means matched
+in attempts, not dollars; cost is reported per arm. An attempt that errors
+keeps its partial diff and records the error; provider failures are flagged
+`infra_error` and excluded, as A's runner did.
+
+`codepilot/bench/run.py` adds two model-free arms, `gold` (must resolve) and
+`empty` (must not), to check the harness per instance before any money is
+spent.
+
+End-to-end proof with a scripted model and nothing else mocked:
+`tests/test_bench_e2e.py` (both arms resolve; agent conftest cheat not
+resolved; agent attempts go through selection; agentless selection picks the
+majority of regression-free samples over an earlier breaking one).
