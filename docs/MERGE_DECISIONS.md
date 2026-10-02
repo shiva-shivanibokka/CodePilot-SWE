@@ -497,3 +497,25 @@ Read with `git -C ../Autonomous-SWE-Agent log main..sop-eval` (read-only; no
 | `a5f80a6` regression gate without `-x` | | already covered by D9.4 / D12 |
 | `9911b2d` distinct seed per repair sample | reproduced there: a seeded config sent seed 3 to all 4 samples | **ported.** This repository sent no seed at all, so the bug could not occur yet, but a seeded study needs seeds. `LLMClient.chat(seed=)`, `AgentLoop(seed=)`, `ArmConfig.seed`; agent attempt k → `seed*1000+k`, agentless sample k → `seed*1000+500+k`, localisation `seed*1000+999`; none sent when unseeded. Tests: `test_a_seeded_run_gives_every_sample_and_attempt_its_own_seed` (failed first: `ArmConfig` had no `seed`), `test_an_unseeded_run_sends_no_seed`. `bench.run --seed` sets it; `--no-model-seed` turns it off. |
 | `2def69f` seed, api_base, Ollama | | `api_base` ported to `LLMClient` (`bench.run --api-base`). Ollama itself needs no registry entry: LiteLLM routes `ollama/<model>` strings, and the CLI's key check skips providers it does not know (D4). No Ollama run was made here. |
+
+## D18. Planning artefact folded into docs/DESIGN.md; README rewritten
+
+**`docs/superpowers/specs/2026-09-01-codepilot-agent-design.md`** (A's design
+spec). Investigated: referenced only by A's README ("`docs/` has the design").
+It held real decisions (six ADRs, the safety model, context management, the
+evaluation honesty rules) and planning scaffolding (status line, milestones,
+"executed as three plans"). The decisions are in `docs/DESIGN.md` §1–5, with
+ADR-2 (Anthropic only) marked superseded by D2; the milestones and the
+module-by-module "what survives from the old code" table are history and stay
+in git (`git show 83d06d8:docs/superpowers/specs/2026-09-01-codepilot-agent-design.md`).
+
+**README.** Rewritten. Every number in it was rechecked against the committed
+files: the experiment table is recomputed from each results file's `summary`
+(cost per completed task), which differs slightly from some figures in A's
+README that were per-task medians (A quoted 4.19x for experiment 1; the
+summaries give 4.4x; A's "1.83x" for small-file edit style was a median, the
+summaries give $0.0444 vs $0.0868). Lost-code counts recomputed: 0 of 150 runs
+(0 of the 40 edit-style runs). Removed claims no longer true: "Anthropic only",
+"no GitHub issue → PR mode", "the container sandbox is not verified end to end"
+(now verified against one official image, D10), "193 tests". Kept, verified:
+11 tools (`len(REGISTRY)`), the doctor runs without a key (`tests/test_doctor.py`).
