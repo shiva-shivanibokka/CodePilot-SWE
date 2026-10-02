@@ -221,3 +221,16 @@ def test_result_rows_never_carry_a_key():
     clean, hits = redact(row)
     assert hits == 3
     assert "gsk_" not in clean and "AIza" not in clean and "ghp_" not in clean
+
+
+async def test_an_unlisted_failing_test_in_the_same_file_does_not_fail_a_correct_patch(env_and_task):
+    """From the SOP eval branch of Autonomous-SWE-Agent (b3253c4): with `-k`
+    selection and exit-status grading, a pre-existing failing test that matched
+    the selector failed a correct patch. Only the listed ids decide here."""
+    env, instance = env_and_task
+    extra = instance["test_patch"].replace("@@ -3,3 +3,9 @@", "@@ -3,3 +3,13 @@") + (
+        "+\n+\n+def test_unrelated_and_broken():\n+    assert False\n"
+    )
+    report = await swebench.grade(env, dict(instance, test_patch=extra), GOLD_PATCH)
+    assert report.applied, report.detail
+    assert report.resolved, report.failures

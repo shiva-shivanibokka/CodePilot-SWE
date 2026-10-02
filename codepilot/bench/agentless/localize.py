@@ -65,7 +65,8 @@ def build_repo_map(root, files: list[str]) -> str:
     return "\n".join(lines)
 
 
-async def localize(client, model: str | None, root, files: list[str], issue: str) -> LocalizationResult:
+async def localize(client, model: str | None, root, files: list[str], issue: str,
+                   seed: int | None = None) -> LocalizationResult:
     repo_map = build_repo_map(root, files)
     reply = await client.chat(
         [
@@ -79,6 +80,7 @@ async def localize(client, model: str | None, root, files: list[str], issue: str
         model=model,
         max_tokens=2048,
         temperature=0.2,
+        **({"seed": seed} if seed is not None else {}),
     )
     try:
         parsed = extract_json(reply.text, expect=dict)

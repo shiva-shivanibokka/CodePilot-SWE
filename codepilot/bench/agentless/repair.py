@@ -86,7 +86,7 @@ def temperature_for(index: int) -> float:
 
 
 async def repair(client, model: str | None, root, issue: str, loc: LocalizationResult,
-                 num_samples: int) -> RepairResult:
+                 num_samples: int, seed: int | None = None) -> RepairResult:
     result = RepairResult(samples=[])
     spots = locations_for(loc)
     contents: dict[str, str] = {}
@@ -103,30 +103,36 @@ async def repair(client, model: str | None, root, issue: str, loc: LocalizationR
         spot = spots[index % len(spots)]
         path = spot["file"]
         temperature = temperature_for(index)
+        # One seed per sample: the same seed with the same prompt makes
+        # temperature-1 samples identical (found on the SOP eval branch of
+        # Autonomous-SWE-Agent, 9911b2d). The length re-ask reuses it.
+        sample_seed = None if seed is None else seed * 1000 + 500 + index
         prompt = (
             issue_message(issue)
             + f'\n\n<file path="{path}">\n{contents[path]}\n</file>\n'
             + _hint(spot)
         )
-        reply = await _ask(client, model, prompt, temperature, SAMPLE_MAX_TOKENS, result)
+        reply = await _ask(client, model, prompt, temperature, SAMPLE_MAX_TOKENS, result, sample_seed)
         if reply.stop_reason == "max_tokens":
             # A reply cut off mid-JSON is unusable and was paid for in full.
             # Asking once more with room to finish costs one call; discarding
             # it buys nothing.
-            reply = await _ask(client, model, prompt, temperature, SAMPLE_MAX_TOKENS * 2, result)
+            reply = await _ask(client, model, prompt, temperature, SAMPLE_MAX_TOKENS * 2, result,
+                               sample_seed)
             result.retried += 1
         patched, note = apply_search_replace(contents[path], reply.text, reply.stop_reason)
         result.samples.append(Sample(index, path, patched, note, temperature))
     return result
 
 
-async def _ask(client, model, prompt, temperature, max_tokens, result: RepairResult):
+async def _ask(client, model, prompt, temperature, max_tokens, result: RepairResult, seed=None):
     reply = await client.chat(
         [{"role": "user", "content": prompt}],
         system=system(REPAIR_ARM),
         model=model,
         max_tokens=max_tokens,
         temperature=temperature,
+        **({"seed": seed} if seed is not None else {}),
     )
     result.usage = result.usage + reply.usage
     result.calls += 1

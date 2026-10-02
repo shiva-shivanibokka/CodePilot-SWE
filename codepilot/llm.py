@@ -486,9 +486,12 @@ class LLMClient:
         max_retries: int = 6,
         timeout: float = 300.0,
         backoff_cap: float = 60.0,
+        api_base: str | None = None,
     ) -> None:
         self.model = model
         self._api_key = api_key
+        #: For a self-hosted server, e.g. an Ollama endpoint.
+        self._api_base = api_base
         self._max_retries = max_retries
         self._timeout = timeout
         self._backoff_cap = backoff_cap
@@ -535,6 +538,7 @@ class LLMClient:
         max_tokens: int,
         temperature: float | None,
         effort: str | None,
+        seed: int | None = None,
     ) -> dict[str, Any]:
         keep = self._keep_cache_control(model)
         wire = to_openai_messages(messages)
@@ -554,6 +558,12 @@ class LLMClient:
             params["tools"] = to_openai_tools(tools)
         if temperature is not None:
             params["temperature"] = temperature
+        if seed is not None:
+            # Honoured by providers that support it (OpenAI, Ollama, some
+            # others); drop_params removes it where it is not.
+            params["seed"] = seed
+        if self._api_base:
+            params["api_base"] = self._api_base
         if effort:
             # The cost dial, where the model has one. LiteLLM maps it onto each
             # provider's reasoning control and drop_params removes it for
@@ -574,6 +584,7 @@ class LLMClient:
         effort: str | None = None,
         thinking: bool = False,
         temperature: float | None = None,
+        seed: int | None = None,
     ) -> Reply:
         litellm = _litellm()
         model = model or self.model
@@ -585,6 +596,7 @@ class LLMClient:
             max_tokens=max_tokens,
             temperature=temperature,
             effort=effort,
+            seed=seed,
         )
 
         attempt = 0

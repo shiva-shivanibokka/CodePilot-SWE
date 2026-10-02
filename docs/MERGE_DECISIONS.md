@@ -484,3 +484,16 @@ A's `.gitignore` lists `AUDIT.md`/`PLAN.md` as scratch, never committed).
 `X-Anthropic-Key` header; with LiteLLM it is passed to whichever provider the
 configured model uses, so the name is now misleading. Renaming a public header
 is a breaking change for anyone who deployed it, so it was left.
+
+## D19. Ported from the parallel SOP-eval branch of Autonomous-SWE-Agent
+
+Read with `git -C ../Autonomous-SWE-Agent log main..sop-eval` (read-only; no
+`sop-eval-2` branch exists). Five commits:
+
+| commit | what | here |
+|---|---|---|
+| `bfd20e8` strip post-base history | clone by URL, delete refs/FETCH_HEAD/reflogs, prune | already covered by D9.1 (`clone_at` fetches one commit at depth 1 into a fresh repo, so nothing after the base is ever present; the full-clone fallback fetches from a temporary clone that is then deleted) |
+| `b3253c4` exact-id grading, no cap | `-rA` + per-id verdict | already covered by D9.2–3. Its third case — an *unlisted*, pre-existing failing test that `-k` selected failed a correct patch — was not yet a test here; added as `test_an_unlisted_failing_test_in_the_same_file_does_not_fail_a_correct_patch` (passes: only listed ids are judged). |
+| `a5f80a6` regression gate without `-x` | | already covered by D9.4 / D12 |
+| `9911b2d` distinct seed per repair sample | reproduced there: a seeded config sent seed 3 to all 4 samples | **ported.** This repository sent no seed at all, so the bug could not occur yet, but a seeded study needs seeds. `LLMClient.chat(seed=)`, `AgentLoop(seed=)`, `ArmConfig.seed`; agent attempt k → `seed*1000+k`, agentless sample k → `seed*1000+500+k`, localisation `seed*1000+999`; none sent when unseeded. Tests: `test_a_seeded_run_gives_every_sample_and_attempt_its_own_seed` (failed first: `ArmConfig` had no `seed`), `test_an_unseeded_run_sends_no_seed`. `bench.run --seed` sets it; `--no-model-seed` turns it off. |
+| `2def69f` seed, api_base, Ollama | | `api_base` ported to `LLMClient` (`bench.run --api-base`). Ollama itself needs no registry entry: LiteLLM routes `ollama/<model>` strings, and the CLI's key check skips providers it does not know (D4). No Ollama run was made here. |

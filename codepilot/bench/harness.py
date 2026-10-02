@@ -67,6 +67,9 @@ class ArmConfig:
     max_tokens: int = 800_000  # per attempt
     compact_at: int = 100_000
     tools: list[str] | None = None  # None = CodePilot's whole tool set
+    #: Run seed. Agent attempt k sends seed*1000+k; agentless sample k sends
+    #: seed*1000+500+k; localisation seed*1000+999. None sends no seed.
+    seed: int | None = None
 
 
 @dataclass
@@ -148,6 +151,7 @@ async def agent_attempt(env: BenchEnv, client, cfg: ArmConfig, issue: str, attem
         client, ctx, convo, budget,
         tool_names=cfg.tools, effort=None, model=cfg.model,
         temperature=0.2 if attempt == 0 else 1.0,
+        seed=None if cfg.seed is None else cfg.seed * 1000 + attempt,
     )
     before = len(events.events)
     stopped_by, error = "error", None
@@ -232,7 +236,7 @@ async def _run_arm(env: BenchEnv, instance: dict, arm: str, cfg: ArmConfig, clie
                     if infra:
                         break
         elif arm == "agentless":
-            run = await run_agentless(env, client, cfg.model, issue, cfg.attempts)
+            run = await run_agentless(env, client, cfg.model, issue, cfg.attempts, seed=cfg.seed)
             spend.usage = spend.usage + run.usage
             spend.cost_usd += run.cost_usd
             spend.calls += run.calls

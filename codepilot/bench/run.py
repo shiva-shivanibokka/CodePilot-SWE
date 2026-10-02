@@ -118,7 +118,11 @@ async def main(argv: list[str] | None = None) -> int:
     target = ap.add_mutually_exclusive_group(required=True)
     target.add_argument("--instances", nargs="+", help="SWE-bench Lite instance ids")
     target.add_argument("--sample", type=int, help="this many instances, sampled with --seed")
-    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--seed", type=int, default=0,
+                    help="sampling seed for --sample, and the run seed sent to the model")
+    ap.add_argument("--no-model-seed", action="store_true",
+                    help="do not send a seed to the model")
+    ap.add_argument("--api-base", default=None, help="a self-hosted endpoint, e.g. for Ollama")
     ap.add_argument("--arms", nargs="+", default=["agent", "agentless"], choices=[*ARMS, *CHECK_ARMS])
     ap.add_argument("--model", default=os.getenv("CODEPILOT_BENCH_MODEL", "gemini/gemini-2.5-flash"))
     ap.add_argument("--attempts", type=int, default=1,
@@ -162,7 +166,11 @@ async def main(argv: list[str] | None = None) -> int:
     cfg = ArmConfig(
         model=args.model, attempts=args.attempts, max_usd=args.max_cost,
         max_turns=args.max_calls, max_tokens=args.max_tokens, compact_at=args.compact_at,
+        seed=None if args.no_model_seed else args.seed,
     )
+    from codepilot.llm import LLMClient
+
+    client = LLMClient(model=args.model, api_base=args.api_base)
     print(f"{len(instances)} instance(s) x arms {args.arms} -> {out}")
     for n, inst in enumerate(instances, 1):
         iid = inst["instance_id"]
@@ -182,7 +190,8 @@ async def main(argv: list[str] | None = None) -> int:
                           f"{r.model_calls} calls  {r.wall_seconds:.0f}s{flag}", flush=True)
 
                 await run_instance(inst, model_arms, cfg, backend=args.backend, setup=setup,
-                                   image=args.image, python=args.python, on_result=report)
+                                   image=args.image, python=args.python, on_result=report,
+                                   client=client)
         except Exception as exc:  # noqa: BLE001 - environment failures are results too
             row = {"instance_id": iid, "arm": "environment", "error": f"{type(exc).__name__}: {exc}"[:2000],
                    "timestamp": datetime.now(UTC).isoformat()}

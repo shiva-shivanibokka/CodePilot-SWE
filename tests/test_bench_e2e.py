@@ -156,3 +156,41 @@ async def test_agent_attempts_go_through_the_same_selection(task):
     assert agent.selected == "agent attempt 2"
     assert agent.stopped_by == ["finished", "finished"]
     assert [c["applied"] for c in agent.candidates] == [False, True]
+
+
+# ------------------------------------------------------------------ seeds
+#
+# Ported from the parallel SOP eval branch of Autonomous-SWE-Agent (commit
+# 9911b2d, tests/test_repair_seeds.py): with one seed sent for every sample,
+# the same prompt at temperature 1 is the same sample, so "N candidates"
+# silently becomes one. Each sample and each agent attempt gets its own seed.
+
+
+class SeedRecorder(ScriptedModel):
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.seeds = []
+
+    async def chat(self, messages, system=None, seed=None, **kw):
+        self.seeds.append(seed)
+        return await super().chat(messages, system=system, **kw)
+
+
+async def test_a_seeded_run_gives_every_sample_and_attempt_its_own_seed(task):
+    model = SeedRecorder([AGENT_FIXES, AGENT_FIXES], [FIX, FIX, FIX])
+    await run_instance(
+        task, ["agentless", "agent"],
+        ArmConfig(model="scripted", attempts=2, max_turns=20, seed=7),
+        client=model, env_options={"install": False, "venv": False},
+    )
+    sample_seeds = model.seeds[1:3]          # after the localisation call
+    agent_seeds = set(model.seeds[3:])
+    assert len(set(sample_seeds)) == 2, sample_seeds
+    assert agent_seeds == {7000, 7001}, agent_seeds
+    assert not set(sample_seeds) & agent_seeds
+
+
+async def test_an_unseeded_run_sends_no_seed(task):
+    model = SeedRecorder([AGENT_FIXES], [FIX])
+    await run(task, model, ["agentless", "agent"], attempts=1)
+    assert set(model.seeds) == {None}

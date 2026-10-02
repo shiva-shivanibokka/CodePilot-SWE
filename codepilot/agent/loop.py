@@ -52,6 +52,7 @@ class AgentLoop:
         effort: str | None = "high",
         model: str | None = None,
         temperature: float | None = None,
+        seed: int | None = None,
     ) -> None:
         self.client = client
         self.ctx = ctx
@@ -64,6 +65,7 @@ class AgentLoop:
         #: None leaves the provider's default. The benchmark sets it so the
         #: agent's attempts follow the same schedule as agentless's samples.
         self.temperature = temperature
+        self.seed = seed
 
     async def run(self, task: str) -> TurnResult:
         events = self.ctx.events
@@ -113,6 +115,7 @@ class AgentLoop:
                 model=self.model,
                 effort=self.effort,
                 **({"temperature": self.temperature} if self.temperature is not None else {}),
+                **({"seed": self.seed} if self.seed is not None else {}),
             )
             steps += 1
             self.budget.record(

@@ -46,11 +46,13 @@ class AgentlessRun:
         return self.localization.unpriced_calls + self.repair.unpriced_calls
 
 
-async def run_agentless(env, client, model: str | None, issue: str, num_samples: int) -> AgentlessRun:
+async def run_agentless(env, client, model: str | None, issue: str, num_samples: int,
+                        seed: int | None = None) -> AgentlessRun:
     env.restore()
     files = Workspace(root=env.root).list_files()
-    loc = await localize(client, model, env.root, files, issue)
-    rep = await repair(client, model, env.root, issue, loc, num_samples)
+    loc = await localize(client, model, env.root, files, issue,
+                         seed=None if seed is None else seed * 1000 + 999)
+    rep = await repair(client, model, env.root, issue, loc, num_samples, seed=seed)
 
     candidates: list[Candidate] = []
     notes: list[str] = []
