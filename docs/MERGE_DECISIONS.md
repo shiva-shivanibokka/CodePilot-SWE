@@ -519,3 +519,47 @@ summaries give $0.0444 vs $0.0868). Lost-code counts recomputed: 0 of 150 runs
 "no GitHub issue → PR mode", "the container sandbox is not verified end to end"
 (now verified against one official image, D10), "193 tests". Kept, verified:
 11 tools (`len(REGISTRY)`), the doctor runs without a key (`tests/test_doctor.py`).
+
+## D20. The harness check's `empty` arm now runs the tests (gap found by running it)
+
+**Found by** the first real gold/empty check (2026-10-02, results in
+`bench/results/harness_check/`). Every `empty` row read
+`"no source changes to grade"` with `F2P 0/0`: `swebench.grade` returns early
+on an empty diff, so the check never ran the FAIL_TO_PASS tests on the
+untouched checkout. "Empty does not resolve" was therefore true by
+construction and could not catch the instance it exists for — one whose
+"failing" test already passes before any fix.
+
+**Reproduced first.** `tests/test_bench_grading.py::test_the_empty_check_actually_runs_the_tests`
+(a fixture instance whose FAIL_TO_PASS is a test that already passes) failed:
+the check reported `ok`. `test_the_empty_check_passes_a_sound_instance` failed
+with `F2P (0, 0)` where `(0, 1)` was expected.
+
+**Fix.** `grade(..., run_if_empty=True)` applies only the test patch and runs
+the graded command; `check_harness` uses it for both arms. Model arms are
+unchanged: an agent that submits nothing is still unresolved without a test
+run. After the fix every `empty` row shows its FAIL_TO_PASS test run and fail
+(`F2P 0/1`) with every PASS_TO_PASS test passing.
+
+The pre-fix rows are kept in `bench/results/harness_check/pre-fix/` as the
+evidence; they are not a valid check of the `empty` arm.
+
+## D21. flask-4992 needs Python < 3.12 on the local backend (environment, not harness)
+
+**Observed.** With the local backend's default interpreter (Python 3.12.3),
+the gold patch for `pallets__flask-4992` failed every graded test (`F2P 0/1,
+P2P 0/18`): `werkzeug<2.3` (pinned by `bench/setups.json`, as
+Autonomous-SWE-Agent's recording did) calls `ast.Str`, deprecated in 3.12, and
+flask's pytest configuration turns warnings into errors.
+
+**Not a harness bug.** The grader reported exactly what the tests did; the
+check flagged it as `HARNESS PROBLEM`, which is its job. Autonomous-SWE-Agent
+had hidden the same thing by appending `-W ignore::DeprecationWarning` to its
+graded command; that was not reproduced here, because changing the grading
+command per instance changes what the tests judge.
+
+**Resolved by environment.** With a Python 3.11 virtualenv (`--python` pointing
+at a 3.11 interpreter already on the machine) and with the official SWE-bench
+image (`--backend docker --image official`, already present locally, nothing
+pulled), gold resolves (`F2P 1/1, P2P 18/18`) and empty does not. The smoke
+command in `bench/STUDY_PLAN.md` now says so.

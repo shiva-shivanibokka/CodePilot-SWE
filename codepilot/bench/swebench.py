@@ -241,22 +241,26 @@ def judge(instance: dict, statuses: dict[str, str]) -> tuple[bool, dict, dict[st
     return resolved, counts, failures
 
 
-async def grade(env, instance: dict, diff: str) -> GradeReport:
+async def grade(env, instance: dict, diff: str, *, run_if_empty: bool = False) -> GradeReport:
     """Grade an agent's diff on a pristine checkout. Leaves the tree graded.
 
     `env` is a `BenchEnv`. The agent's working tree is discarded first: the
     only thing that carries over is the filtered source diff.
+
+    An empty diff is unresolved without running anything, unless
+    `run_if_empty` — the harness check's `empty` arm, which must see the
+    FAIL_TO_PASS tests actually fail on the untouched checkout.
     """
     test_patch = instance.get("test_patch") or ""
     kept, dropped = filter_source_diff(diff, set(patched_files(test_patch)))
     env.restore()
     report = GradeReport(resolved=False, applied=False, dropped=dropped)
-    if not kept.strip():
+    if not kept.strip() and not run_if_empty:
         report.detail = "no source changes to grade" + (
             f" ({len(dropped)} file(s) dropped)" if dropped else ""
         )
         return report
-    ok, detail = env.apply(kept)
+    ok, detail = env.apply(kept) if kept.strip() else (True, "nothing to apply")
     if not ok:
         report.detail = f"the agent's patch does not apply to a clean checkout: {detail}"
         return report

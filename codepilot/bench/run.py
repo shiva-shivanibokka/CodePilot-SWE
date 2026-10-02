@@ -80,19 +80,20 @@ def load_keys(paths: list[str]) -> None:
             load_dotenv(p, override=False)
 
 
-async def check_harness(instance: dict, arms: list[str], *, backend, setup, image, python) -> list[dict]:
+async def check_harness(instance: dict, arms: list[str], *, backend, setup, image, python,
+                        env_options: dict | None = None) -> list[dict]:
     repo_url = instance.get("repo_url") or f"https://github.com/{instance['repo']}.git"
     if backend == "docker" and image == "official":
         image = swebench_image(instance["instance_id"])
     out = []
     env = await BenchEnv.create(
         repo_url, instance["base_commit"], backend=backend, setup=setup, image=image,
-        python=python, task_id=instance["instance_id"],
+        python=python, task_id=instance["instance_id"], **(env_options or {}),
     )
     try:
         for arm in arms:
             diff = instance.get("patch", "") if arm == "gold" else ""
-            report = await swebench.grade(env, instance, diff)
+            report = await swebench.grade(env, instance, diff, run_if_empty=True)
             env.restore()
             out.append(
                 {

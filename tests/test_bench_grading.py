@@ -234,3 +234,36 @@ async def test_an_unlisted_failing_test_in_the_same_file_does_not_fail_a_correct
     report = await swebench.grade(env, dict(instance, test_patch=extra), GOLD_PATCH)
     assert report.applied, report.detail
     assert report.resolved, report.failures
+
+
+# ------------------------------------------------------- the harness check
+#
+# Reproduction (docs/MERGE_DECISIONS.md, D20): the `empty` arm of the harness
+# check returned "no source changes to grade" without running anything, so it
+# reported ok even for an instance whose FAIL_TO_PASS test already passes on
+# the untouched checkout — exactly the broken instance it exists to catch.
+
+
+async def test_the_empty_check_actually_runs_the_tests(tmp_path):
+    from codepilot.bench.run import check_harness
+
+    instance, _ = make_task(tmp_path)
+    # A broken instance: its "failing" test passes before any fix.
+    broken = dict(instance, FAIL_TO_PASS=json.dumps(["tests/test_calc.py::test_double"]),
+                  PASS_TO_PASS="[]")
+    rows = await check_harness(broken, ["empty"], backend="local", setup=None, image=None,
+                               python=None, env_options={"install": False, "venv": False})
+    assert rows[0]["resolved"] is True
+    assert rows[0]["ok"] is False, "a FAIL_TO_PASS test that passes unpatched must be flagged"
+
+
+async def test_the_empty_check_passes_a_sound_instance(tmp_path):
+    from codepilot.bench.run import check_harness
+
+    instance, _ = make_task(tmp_path)
+    rows = await check_harness(instance, ["gold", "empty"], backend="local", setup=None,
+                               image=None, python=None,
+                               env_options={"install": False, "venv": False})
+    assert [(r["arm"], r["ok"]) for r in rows] == [("gold", True), ("empty", True)]
+    empty = rows[1]["grade"]
+    assert (empty["f2p_passed"], empty["f2p_total"]) == (0, 1), "the F2P test must have run and failed"
