@@ -64,3 +64,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       - run: python -m codepilot.bench.suite.runner --dry-run
+
+  docker-images:
+    # Both images must at least build. Carried over from Autonomous-SWE-Agent's
+    # CI, which built its sandbox image on every push. Nothing is run in them
+    # here: the Docker grading test is opt-in (CODEPILOT_DOCKER_IMAGE).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f deploy/sandbox.Dockerfile -t codepilot-sandbox:ci .
+      - run: docker build -f deploy/bench.Dockerfile -t codepilot-bench:ci .

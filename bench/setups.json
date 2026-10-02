@@ -1,0 +1,6 @@
+{
+  "pallets__flask-4992": "python -m pip install -q -r requirements/tests.txt && python -m pip install -q \"pytest>=7.4,<8\" \"werkzeug<2.3\"",
+  "sympy__sympy-18199": "python -m pip install -q mpmath setuptools \"pytest>=7.4,<8\"",
+  "sympy__sympy-22714": "python -m pip install -q mpmath setuptools \"pytest>=7.4,<8\"",
+  "sympy__sympy-24213": "python -m pip install -q mpmath setuptools \"pytest>=7.4,<8\""
+}

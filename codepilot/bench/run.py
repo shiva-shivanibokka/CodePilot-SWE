@@ -29,6 +29,7 @@ import asyncio
 import json
 import os
 import random
+import re
 import sys
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -39,6 +40,27 @@ from codepilot.bench.environment import BenchEnv, swebench_image
 from codepilot.bench.harness import ARMS, ArmConfig, InstanceResult, run_instance
 
 CHECK_ARMS = ("gold", "empty")
+
+#: Results are meant to be committed. Anything key-shaped is redacted before a
+#: row is written, whatever path it took to get there (a command's output, an
+#: error message quoting a request). From Autonomous-SWE-Agent's recorder
+#: (`eval/record_run.py::scan_for_secrets`), which refused to write instead.
+SECRET_PATTERNS = [
+    re.compile(r"sk-ant-[A-Za-z0-9_\-]{20,}"),
+    re.compile(r"sk-[A-Za-z0-9]{32,}"),
+    re.compile(r"gsk_[A-Za-z0-9]{20,}"),
+    re.compile(r"AIza[A-Za-z0-9_\-]{30,}"),
+    re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"),
+]
+
+
+def redact(text: str) -> tuple[str, int]:
+    """`text` with key-shaped substrings replaced, and how many there were."""
+    count = 0
+    for pattern in SECRET_PATTERNS:
+        text, n = pattern.subn("[REDACTED]", text)
+        count += n
+    return text, count
 
 
 def choose_instances(args) -> list[dict]:
@@ -129,8 +151,11 @@ async def main(argv: list[str] | None = None) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
 
     def write(row: dict) -> None:
+        line, hits = redact(json.dumps(row))
+        if hits:
+            print(f"    redacted {hits} key-shaped string(s) from the result row")
         with out.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(row) + "\n")
+            fh.write(line + "\n")
 
     model_arms = [a for a in args.arms if a in ARMS]
     check_arms = [a for a in args.arms if a in CHECK_ARMS]

@@ -442,3 +442,45 @@ agentless pipeline and API, all removed or rewritten.
 **Proposed, not done.** `create_pr` without `repo_local_path` opens a PR for a
 branch nothing pushed (from reading the code; it would need GitHub to
 reproduce, so it was left alone). `solve.py` always passes the path.
+
+## D15. The rest of Autonomous-SWE-Agent: what was kept, moved, or dropped
+
+Every file under `swe/` after D1, with its fate. All of it remains readable in
+history (`git show 69fe4a9:swe/<path>`).
+
+| B file(s) | fate | why / evidence |
+|---|---|---|
+| `agent/loop.py` | dropped | Duplicate loop. Compared with A's: B stops on a `<DONE>` text marker, A on an explicit `finish` tool (no parsing of free text); both have turn caps; A adds budgets, interrupts, compaction by summary, an event stream both arms share. Unique bit `changed_lines` ported to `bench/checkout.py`. |
+| `agent/tools/bash.py` | dropped | A's `run_command` covers it. B's description told the model "State IS persistent across calls: cd, export … persist", while B's own Docker backend says the opposite (`B:sandbox/docker_workspace.py::run`: "Each call is a fresh shell … `cd` does not carry across calls"); not carried over. |
+| `agent/tools/editor.py` | dropped | `view_range` ported as `read_file` start/end (D7). `str_replace`/`create` = A's `edit_file`/`write_file` (A adds read-before-write). `insert` and per-file `undo_edit` not ported: `edit_file` covers insertion, and A's git checkpoints cover undo. |
+| `agent/tools/search.py` | ported | D8. |
+| `agent/context.py` | dropped | tiktoken count + truncate-to-summary compression. A's compaction (model summary, safe cut at tool pairs, size from provider usage — D3) kept instead; B's cut-point rule (never orphan a tool result) is the same rule as A's `_safe_cut`, already tested in `tests/test_context.py`. |
+| `agent/prompts.py` | folded | Its SWE-bench workflow (explore, reproduce, fix, verify, don't touch tests) is in `bench/prompts.py::AGENT_ARM`. |
+| `agent/llm.py`, `agent/providers.py` | replaced / moved | D2, D4; `extract_json` moved verbatim (D12). |
+| `agentless/*` | moved, rewritten | D12. |
+| `eval/harness.py` | moved, rewritten | D9. |
+| `eval/run_eval.py` | replaced | `codepilot/bench/run.py`. B ran instances in a 4-worker thread pool; the new runner is sequential (one environment at a time, which is also what this machine can afford). |
+| `eval/record_run.py` | dropped, one piece ported | Produced replays for the frontend. Its key-shaped-string scan is ported as `bench/run.py::redact`, applied to every result row (`test_result_rows_never_carry_a_key`). |
+| `sandbox/workspace.py`, `local_workspace.py`, `docker_workspace.py`, `__init__.py` | replaced | D5, D10. |
+| `sandbox/Dockerfile.sandbox` | moved, adapted | `deploy/bench.Dockerfile` (tag `codepilot-bench`): build toolchain kept; `/repo`, user and safe.directory removed because the checkout is mounted and git runs on the host. |
+| `github_integration/`, `observability/` | moved | D17. |
+| `api/` (FastAPI + websocket) | dropped | Its only job was driving B's loop and agentless pipeline for the Next.js frontend (`B:api/main.py` imports `agent.llm`, `agent.providers`, B's sandbox). Repointing means rewriting it against a different loop and event shape — not trivial. CodePilot already has a CLI, a web UI (`webui.py`) and a hosted HTTP API (`server.py`, `http_api.py`). |
+| `frontend/` (Next.js) | dropped, data kept | Consumed `api/` and B's replay format. The eight recorded runs it shipped are real measurements and were moved to `bench/results/autonomous-swe-agent-recordings/` with a label (`NOTE.md`). Scanned with `redact`: 0 key-shaped strings. `frontend/data/benchmark.json` was `[]` (no benchmark had been run), so nothing was lost. |
+| `Dockerfile`, `Dockerfile.serve`, `docker-compose.yml`, `prometheus.yml`, `requirements-serve.txt` | dropped | All serve `api/` (`CMD uvicorn api.main:app`). |
+| `pyproject.toml` | dropped | Its dependencies that are still used are in `requirements.txt` (litellm, rank-bm25, PyGithub, tenacity, prometheus-client, opentelemetry). |
+| `.github/workflows/ci.yml` | merged | Its Docker image build kept as a `docker-images` job. Its frontend job went with the frontend. Its "smoke eval" job needed a paid key in CI and was not carried over. |
+| `.env.example` | merged | Provider keys and GITHUB_TOKEN listed in the root `.env.example`; B's API/frontend settings dropped with them. |
+| `LICENSE` (MIT, same author) | moved to root | A had no licence; B's code is in this repository under it. |
+| `README.md` | folded | Facts still true are in the new README's provenance section. |
+| `tests/*` | ported or retired | `test_providers.py` → `tests/test_providers.py`; `test_regressions.py` → `tests/test_agentless.py`, `test_local_sandbox.py`, `test_permissions.py`, `test_tools.py` (search); `test_harness.py` → URL-parser tests in `tests/test_github_integration.py`, `test_no_timeout_flag` in `tests/test_bench_grading.py`. Retired with their code: `test_loop.py` (B's loop), `test_tools.py` (bash/editor output formats), `test_context.py` (tiktoken counting), `TestLocalWorkspacePaths` (`/repo` mapping), `TestSearchIndexCacheKey` (replaced by behavioural tests), `TestValidationBaseline` (replaced by `TestRegressionsByTestId`), `TestInstanceResult` (dataclass round-trip of a removed type). |
+
+**Planning artefacts.** Of the names the brief listed, only
+`docs/superpowers/specs/2026-09-01-codepilot-agent-design.md` exists in either
+repository (`git ls-files | grep -iE "AUDIT|PLAN|CLAUDE|AGENTS|superpowers"`;
+A's `.gitignore` lists `AUDIT.md`/`PLAN.md` as scratch, never committed).
+`git grep -n ponytail` finds nothing in either tree. See D18 for the spec.
+
+**Proposed, not done.** The hosted API still reads the caller's key from an
+`X-Anthropic-Key` header; with LiteLLM it is passed to whichever provider the
+configured model uses, so the name is now misleading. Renaming a public header
+is a breaking change for anyone who deployed it, so it was left.

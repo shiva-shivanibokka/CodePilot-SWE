@@ -46,6 +46,9 @@ from codepilot.sandbox.local import LocalSandbox
 #: Official SWE-bench images keep the repository at /testbed and their
 #: environment in a conda env named "testbed".
 SWEBENCH_WORKDIR = "/testbed"
+#: Built from deploy/bench.Dockerfile. Distinct from the hosted mode's
+#: codepilot-sandbox image, which is deliberately minimal.
+BENCH_IMAGE = "codepilot-bench:latest"
 #: Commands run under `sh`, where conda's activate script does not work, so
 #: the environment is selected by putting its bin directory first on PATH.
 SWEBENCH_PREFIX = "export PATH=/opt/miniconda3/envs/testbed/bin:$PATH && "
@@ -194,9 +197,9 @@ def _local_sandbox(root: Path, tmpdir: Path, python: str | None, use_venv: bool)
 
 
 async def _docker_sandbox(root: Path, image: str | None) -> Sandbox:
-    from codepilot.sandbox.docker import DEFAULT_IMAGE, DockerSandbox
+    from codepilot.sandbox.docker import DockerSandbox
 
-    image = image or DEFAULT_IMAGE
+    image = image or BENCH_IMAGE
     official = image.startswith("swebench/")
     sandbox = DockerSandbox(
         image,

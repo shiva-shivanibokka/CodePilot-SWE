@@ -212,3 +212,12 @@ def test_no_timeout_flag():
         {"FAIL_TO_PASS": json.dumps(["tests/test_a.py::test_1"]), "PASS_TO_PASS": "[]"}
     )
     assert "--timeout" not in spec.command
+
+
+def test_result_rows_never_carry_a_key():
+    from codepilot.bench.run import redact
+
+    row = '{"log": "GROQ gsk_' + "a" * 30 + ' and AIza' + "b" * 35 + ' and ghp_' + "c" * 30 + '"}'
+    clean, hits = redact(row)
+    assert hits == 3
+    assert "gsk_" not in clean and "AIza" not in clean and "ghp_" not in clean
