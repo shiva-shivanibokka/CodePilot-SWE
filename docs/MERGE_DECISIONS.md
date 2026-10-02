@@ -397,3 +397,48 @@ across all 150 committed runs, **none** lists a `conftest.py` among
 `files_edited`. That field records `edit_file`/`write_file` paths (loop) or new
 files (pipeline), so a conftest created through `run_command` would not appear;
 the results are carried over as measured, with this caveat in the README.
+
+## D17. GitHub integration and observability kept, under `codepilot/integrations/`
+
+**Investigated.** `B:github_integration/` was called from two places, both
+removed in this merge: `B:api/main.py` (only `fetch_issue`; `create_pr` was
+exposed as a request field but never called — `git grep create_pr` finds only
+the definition, the schema field and the frontend) and `B:eval/record_run.py`
+(`--issue`). `B:observability/` was called from B's loop, tools, sandboxes,
+agentless pipeline and API, all removed or rewritten.
+
+**Kept, and made to work against the merged loop.**
+- `git mv` to `codepilot/integrations/github/` and
+  `codepilot/integrations/observability/`.
+- New `codepilot/integrations/github/solve.py`: fetch an issue, check the repo
+  out as a benchmark task would (HEAD, no remote), run CodePilot's loop with the
+  benchmark's agent prompt, print the diff; `--open-pr` only on request.
+  `tests/test_github_integration.py::test_an_issue_is_solved_by_the_merged_loop_and_a_pr_only_on_request`.
+- New `observability/events.py`: Prometheus metrics fed from CodePilot's event
+  stream as a subscriber, instead of calls sprinkled through the agent.
+  `test_the_event_stream_drives_the_prometheus_metrics`. `AgentMetrics` gained
+  an optional `registry`. The OTLP exporter import became lazy so the package
+  imports without it.
+
+**Bugs reproduced in `pr_creator._commit_and_push`, then fixed.**
+1. *Shell injection from the issue title.* It ran
+   ``git commit -m "{message}"`` with `shell=True`. Reproduced against B's code
+   (scratch copy, push stubbed so nothing left the machine): a title of
+   `x" & echo PWNED > pwned.txt & echo "` created `pwned.txt` under Windows
+   `cmd.exe`. (`$(…)` did not fire on Windows, because cmd does not expand it;
+   on POSIX `/bin/sh` it would.) Now argument lists throughout.
+   `test_an_issue_title_cannot_run_commands` covers all three forms.
+2. *Token on the command line.* It pushed to `https://{token}@github.com/…`.
+   Now the token travels as an HTTP header via `GIT_CONFIG_COUNT/KEY/VALUE` in
+   the child's environment, and is masked in error text.
+   `test_the_token_is_never_on_a_command_line` failed before
+   (`['git push https://ghp_SECRETTOKEN@github.com/o/r.git fix-7']`).
+3. *PR body.* Told reviewers to `git checkout {issue_number}` (not the
+   branch), and called the project "a production SWE agent benchmarked on
+   SWE-bench-lite", which no committed result supports. Now names the branch
+   and says the change is unreviewed model output.
+   `test_the_pr_body_does_not_claim_what_was_not_measured`.
+
+**Proposed, not done.** `create_pr` without `repo_local_path` opens a PR for a
+branch nothing pushed (from reading the code; it would need GitHub to
+reproduce, so it was left alone). `solve.py` always passes the path.

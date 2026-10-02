@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from github import Github, GithubException
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from github_integration.issue_fetcher import IssueData
+from codepilot.integrations.github.issue_fetcher import IssueData
 
 
 @dataclass
@@ -66,7 +66,7 @@ def create_pr(
     gh = Github(token)
     repo = gh.get_repo(issue_data.repo_full_name)
 
-    branch_name = f"swe-agent/fix-issue-{issue_data.issue_number}"
+    branch_name = f"codepilot/fix-issue-{issue_data.issue_number}"
 
     # If we have the local repo path, use git to commit and push
     if repo_local_path:
@@ -77,7 +77,7 @@ def create_pr(
         files_changed = _parse_changed_files(diff)
 
     # Build PR body
-    pr_body = _build_pr_body(issue_data, diff, conclusion, files_changed)
+    pr_body = _build_pr_body(issue_data, diff, conclusion, files_changed, branch_name)
 
     try:
         pr = repo.create_pull(
@@ -91,7 +91,7 @@ def create_pr(
         try:
             issue = repo.get_issue(issue_data.issue_number)
             issue.create_comment(
-                f"Autonomous-SWE-Agent has opened a pull request to fix this issue: {pr.html_url}"
+                f"CodePilot has opened a pull request to fix this issue: {pr.html_url}"
             )
         except GithubException:
             pass  # Comment failure is non-fatal
@@ -124,40 +124,62 @@ def _commit_and_push(
     conclusion: str,
     token: str,
 ) -> list[str]:
-    """Create a git branch, commit changes, and push to GitHub."""
+    """Create a git branch, commit changes, and push to GitHub.
 
-    def git(cmd: str, **kwargs) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            cmd, shell=True, cwd=repo_path, capture_output=True, text=True, **kwargs
+    Every git call is an argument list, never a shell string: the commit
+    message carries the issue title, which anyone who can open an issue
+    controls. The original interpolated it into `git commit -m "..."` under
+    `shell=True`, which ran `" & cmd & "` on Windows and `$(cmd)` on POSIX.
+    """
+
+    def git(*args: str) -> subprocess.CompletedProcess:
+        result = subprocess.run(
+            ["git", "-c", "user.email=codepilot@localhost", "-c", "user.name=CodePilot", *args],
+            cwd=repo_path, capture_output=True, text=True,
         )
+        if result.returncode != 0:
+            raise RuntimeError(f"git {args[0]} failed: {result.stderr.strip()[:300]}")
+        return result
 
-    # Configure git
-    git('git config user.email "swe-agent@autonomous"')
-    git('git config user.name "Autonomous-SWE-Agent"')
-
-    # Create branch
-    git(f"git checkout -b {branch_name}")
-
-    # Stage all changes
-    git("git add -A")
-
-    # Get changed files
-    status = git("git diff --cached --name-only")
+    git("checkout", "-b", branch_name)
+    git("add", "-A")
+    status = git("diff", "--cached", "--name-only")
     files_changed = [f.strip() for f in status.stdout.splitlines() if f.strip()]
-
-    # Commit
     commit_msg = (
         f"Fix issue #{issue_data.issue_number}: {issue_data.issue_title}\n\n"
         f"{conclusion}\n\n"
         f"Fixes #{issue_data.issue_number}"
     )
-    git(f'git commit -m "{commit_msg}"')
-
-    # Push with token auth
-    remote_url = issue_data.repo_url.replace("https://", f"https://{token}@")
-    git(f"git push {remote_url} {branch_name}")
-
+    git("commit", "-q", "-m", commit_msg)
+    _push(repo_path, issue_data.repo_url, branch_name, token)
     return files_changed
+
+
+def _push(repo_path: str, repo_url: str, branch_name: str, token: str) -> None:
+    """Push with the token in an HTTP header passed through the environment.
+
+    The original pushed to `https://{token}@github.com/...`, which puts the
+    token on the command line (readable in the process list) and in git's
+    error output. GIT_CONFIG_COUNT/KEY/VALUE (git >= 2.31) keeps it in the
+    child's environment only.
+    """
+    import base64
+    import os
+
+    basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+    env = {
+        **os.environ,
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "http.https://github.com/.extraheader",
+        "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: basic {basic}",
+        "GIT_TERMINAL_PROMPT": "0",
+    }
+    result = subprocess.run(
+        ["git", "push", repo_url, f"{branch_name}:{branch_name}"],
+        cwd=repo_path, capture_output=True, text=True, env=env,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"git push failed: {result.stderr.replace(token, '***').strip()[:300]}")
 
 
 def _parse_changed_files(diff: str) -> list[str]:
@@ -173,8 +195,10 @@ def _build_pr_body(
     diff: str,
     conclusion: str,
     files_changed: list[str],
+    branch_name: str = "",
 ) -> str:
     """Build the PR description."""
+    branch_name = branch_name or f"codepilot/fix-issue-{issue_data.issue_number}"
     files_list = "\n".join(f"- `{f}`" for f in files_changed) or "- (see diff)"
     diff_lines = len(diff.splitlines())
 
@@ -193,14 +217,12 @@ Fixes #{issue_data.issue_number}
 ## How to test
 
 ```bash
-# Clone and checkout this branch
-git checkout {issue_data.issue_number}
-
-# Run the relevant tests
-pytest tests/ -x -q
+git fetch origin {branch_name}
+git checkout {branch_name}
+python -m pytest
 ```
 
 ---
-*This pull request was generated by [Autonomous-SWE-Agent](https://github.com/shiva-shivanibokka/Autonomous-SWE-Agent), \
-a production SWE agent benchmarked on SWE-bench-lite.*
+*Opened by CodePilot, a coding agent. The change was written by a model and has
+not been reviewed by a person; review it as you would any outside contribution.*
 """

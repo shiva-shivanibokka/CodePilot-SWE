@@ -1,9 +1,12 @@
 """
 OpenTelemetry distributed tracing.
 
-Every agent turn, tool call, and sandbox operation is wrapped in a span so
-you can visualise the full execution tree in Jaeger. This is the observability
-layer that separates a production system from a demo.
+Optional. In Autonomous-SWE-Agent every turn, tool call and sandbox operation
+opened a span; those call sites were removed with that project's loop and
+tools. What remains is the setup: point OTEL_EXPORTER_OTLP_ENDPOINT at a
+collector and spans opened with `get_tracer(__name__)` are exported. The OTLP
+exporter is imported only when an endpoint is configured, so the package
+imports without it.
 
 Usage:
     from observability.tracing import get_tracer, setup_tracing
@@ -23,7 +26,6 @@ from __future__ import annotations
 import os
 
 from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import (
@@ -54,6 +56,8 @@ def setup_tracing(
     endpoint = otlp_endpoint or os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 
     if endpoint:
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+
         otlp_exporter = OTLPSpanExporter(endpoint=endpoint, insecure=True)
         provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
     elif console_fallback:

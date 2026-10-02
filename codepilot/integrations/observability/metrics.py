@@ -40,27 +40,34 @@ class AgentMetrics:
     sees them immediately, even before any tasks run.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, registry=None) -> None:
+        # A registry other than the process-wide default, for tests and for
+        # running two independent sets of counters in one process.
+        reg = {} if registry is None else {"registry": registry}
         # ── Task-level ─────────────────────────────────────────────────────
         self.tasks_total = Counter(
             "swe_agent_tasks_total",
             "Total number of tasks attempted",
             ["approach"],  # "agent" | "agentless"
+            **reg,
         )
         self.tasks_resolved = Counter(
             "swe_agent_tasks_resolved_total",
             "Tasks where tests passed (resolved)",
             ["approach"],
+            **reg,
         )
         self.tasks_failed = Counter(
             "swe_agent_tasks_failed_total",
             "Tasks that ran but did not resolve",
             ["approach"],
+            **reg,
         )
         self.tasks_error = Counter(
             "swe_agent_tasks_error_total",
             "Tasks that errored out (exception, timeout, etc.)",
             ["approach"],
+            **reg,
         )
 
         # ── Cost and tokens ────────────────────────────────────────────────
@@ -68,16 +75,19 @@ class AgentMetrics:
             "swe_agent_cost_usd_total",
             "Total LLM cost in USD",
             ["approach"],
+            **reg,
         )
         self.input_tokens_total = Counter(
             "swe_agent_input_tokens_total",
             "Total input tokens consumed",
             ["approach"],
+            **reg,
         )
         self.output_tokens_total = Counter(
             "swe_agent_output_tokens_total",
             "Total output tokens generated",
             ["approach"],
+            **reg,
         )
 
         # ── Per-task distributions ─────────────────────────────────────────
@@ -86,18 +96,21 @@ class AgentMetrics:
             "Number of agent turns per task",
             ["approach"],
             buckets=[1, 5, 10, 20, 30, 50, 75, 100],
+            **reg,
         )
         self.task_duration_seconds = Histogram(
             "swe_agent_task_duration_seconds",
             "Wall-clock time per task in seconds",
             ["approach"],
             buckets=[30, 60, 120, 300, 600, 1200, 1800],
+            **reg,
         )
         self.cost_per_task = Histogram(
             "swe_agent_cost_per_task_usd",
             "LLM cost per task in USD",
             ["approach"],
             buckets=[0.01, 0.05, 0.10, 0.25, 0.50, 1.0, 2.0, 5.0],
+            **reg,
         )
 
         # ── Tool calls ─────────────────────────────────────────────────────
@@ -105,17 +118,20 @@ class AgentMetrics:
             "swe_agent_tool_calls_total",
             "Total tool invocations",
             ["tool_name"],  # "bash" | "str_replace_editor" | "search_codebase"
+            **reg,
         )
         self.tool_errors_total = Counter(
             "swe_agent_tool_errors_total",
             "Tool invocations that returned a non-zero exit code or error",
             ["tool_name"],
+            **reg,
         )
         self.tool_duration_ms = Histogram(
             "swe_agent_tool_duration_ms",
             "Tool execution latency in milliseconds",
             ["tool_name"],
             buckets=[10, 50, 100, 250, 500, 1000, 2000, 5000, 10000],
+            **reg,
         )
 
         # ── Live state ─────────────────────────────────────────────────────
@@ -123,11 +139,13 @@ class AgentMetrics:
             "swe_agent_active_tasks",
             "Number of tasks currently running",
             ["approach"],
+            **reg,
         )
         self.resolve_rate = Gauge(
             "swe_agent_resolve_rate",
             "Rolling resolve rate (resolved / total), updated after each task",
             ["approach"],
+            **reg,
         )
 
         # Internal counters for computing rolling resolve rate
