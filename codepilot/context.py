@@ -157,6 +157,16 @@ class Conversation:
         )
         return self._last_token_count
 
+    def observe(self, usage: Usage) -> int:
+        """Record how big the conversation was, from the provider's own count.
+
+        Every reply's usage says exactly how many tokens the request carried,
+        so this is the real size of the conversation as of the last call plus
+        what the model just added — no second request, and no estimate.
+        """
+        self._last_token_count = usage.prompt_tokens + usage.output_tokens
+        return self._last_token_count
+
     def needs_compaction(self) -> bool:
         return self._last_token_count > self.compact_at
 

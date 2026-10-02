@@ -24,6 +24,7 @@ from codepilot.agent.loop import AgentLoop, new_conversation
 from codepilot.events import Event, EventStream, EventType, supports_unicode
 from codepilot.llm import STRONG_MODEL, LLMClient, LLMError, load_env
 from codepilot.permissions import Budget, PermissionGate
+from codepilot.providers import key_env_for_model
 from codepilot.sandbox.local import LocalSandbox
 from codepilot.session import SessionStore, list_sessions
 from codepilot.tools import ToolContext
@@ -328,7 +329,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     def shared(p):
-        p.add_argument("--model", default=STRONG_MODEL)
+        p.add_argument(
+            "--model",
+            default=STRONG_MODEL,
+            help="any LiteLLM model string, e.g. groq/llama-3.3-70b-versatile",
+        )
         p.add_argument(
             "--effort",
             default="high",
@@ -401,13 +406,17 @@ def main(argv: list[str] | None = None) -> int:
             pass
 
     args = build_parser().parse_args(argv)
-    if not os.getenv("ANTHROPIC_API_KEY"):
+    model = getattr(args, "model", STRONG_MODEL)
+    # None for a provider the registry does not know (a local model server,
+    # say): LiteLLM will report what it needs on the first request.
+    key_env = key_env_for_model(model)
+    if not key_env or not os.getenv(key_env):
         load_env(Path(args.directory).resolve())
-    if not os.getenv("ANTHROPIC_API_KEY") and args.fn not in (cmd_doctor, cmd_serve):
-        # Without this the SDK raises a TypeError about request headers, eight
+    if key_env and not os.getenv(key_env) and args.fn not in (cmd_doctor, cmd_serve):
+        # Without this the provider SDK raises about request headers, eight
         # frames deep, for what is one missing line in one file.
         print(
-            "  ! ANTHROPIC_API_KEY is not set.\n"
+            f"  ! {key_env} is not set (needed for {model}).\n"
             "    Put it in .env here, in the repository you are working on, or in\n"
             f"    {Path.home() / '.codepilot.env'} to use it from anywhere."
         )

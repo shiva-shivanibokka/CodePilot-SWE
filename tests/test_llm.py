@@ -1,0 +1,255 @@
+"""The LiteLLM seam: translation both ways, caching, usage, cost and errors.
+
+No network. `litellm.acompletion` is replaced with a stub that records what it
+was sent and replies with a hand-built response.
+"""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import litellm
+import pytest
+
+from codepilot import llm
+from codepilot.context import Conversation
+from codepilot.llm import (
+    LLMClient,
+    LLMError,
+    reply_from_response,
+    to_openai_messages,
+    to_openai_system,
+)
+
+
+def response(text="", tool_calls=(), finish="stop", prompt=100, completion=20, **usage_extra):
+    calls = [
+        SimpleNamespace(
+            id=cid, function=SimpleNamespace(name=name, arguments=args)
+        )
+        for cid, name, args in tool_calls
+    ]
+    return SimpleNamespace(
+        model="stub-model",
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content=text, tool_calls=calls or None),
+                finish_reason=finish,
+            )
+        ],
+        usage=SimpleNamespace(
+            prompt_tokens=prompt, completion_tokens=completion, **usage_extra
+        ),
+    )
+
+
+# ----------------------------------------------------------- translation out
+
+
+def test_tool_use_and_tool_result_blocks_become_openai_tool_messages():
+    convo = Conversation(system_prompt="SYS")
+    convo.user("fix it")
+    convo.assistant(
+        [
+            {"type": "text", "text": "looking"},
+            {"type": "tool_use", "id": "tu_1", "name": "read_file", "input": {"path": "a.py"}},
+            {"type": "tool_use", "id": "tu_2", "name": "list_files", "input": {}},
+        ]
+    )
+    convo.tool_results(
+        [
+            Conversation.tool_result("tu_1", "contents"),
+            Conversation.tool_result("tu_2", "boom", is_error=True),
+        ]
+    )
+    wire = to_openai_messages(convo.messages)
+    assert wire[0] == {"role": "user", "content": "fix it"}
+    assert wire[1]["role"] == "assistant"
+    assert wire[1]["content"] == "looking"
+    assert [c["id"] for c in wire[1]["tool_calls"]] == ["tu_1", "tu_2"]
+    assert wire[1]["tool_calls"][0]["function"]["arguments"] == '{"path": "a.py"}'
+    # One tool message per result, in order, ids preserved.
+    assert wire[2] == {"role": "tool", "tool_call_id": "tu_1", "content": "contents"}
+    assert wire[3]["tool_call_id"] == "tu_2"
+    assert wire[3]["content"].startswith("ERROR: "), "an error result must read as one"
+
+
+def test_an_assistant_turn_with_only_tool_calls_has_null_content():
+    wire = to_openai_messages(
+        [{"role": "assistant", "content": [{"type": "tool_use", "id": "x", "name": "f", "input": {}}]}]
+    )
+    assert wire[0]["content"] is None
+    assert wire[0]["tool_calls"][0]["function"]["name"] == "f"
+
+
+def test_cache_breakpoint_survives_only_where_the_provider_honours_it():
+    blocks = Conversation(system_prompt="SYS", project_instructions="PROJ").system_blocks()
+    kept = to_openai_system(blocks, keep_cache_control=True)
+    assert kept["content"][-1]["cache_control"] == {"type": "ephemeral"}
+    assert "cache_control" not in kept["content"][0]
+    stripped = to_openai_system(blocks, keep_cache_control=False)
+    assert isinstance(stripped["content"], str)
+    assert "cache_control" not in stripped["content"]
+    assert "SYS" in stripped["content"] and "PROJ" in stripped["content"]
+
+
+# ------------------------------------------------------------ translation in
+
+
+def test_tool_calls_win_over_a_stop_label():
+    """Several providers say finish_reason='stop' on a turn with tool calls."""
+    reply = reply_from_response(
+        response(tool_calls=[("c1", "read_file", '{"path": "x.py"}')], finish="stop"),
+        model="m", latency_ms=1, cost_usd=None,
+    )
+    assert reply.stop_reason == "tool_use"
+    assert reply.wants_tools
+    assert reply.tool_calls[0].arguments == {"path": "x.py"}
+    assert reply.content[-1] == {
+        "type": "tool_use", "id": "c1", "name": "read_file", "input": {"path": "x.py"}
+    }
+
+
+def test_unparseable_arguments_reach_the_tool_as_an_error_not_as_nothing():
+    reply = reply_from_response(
+        response(tool_calls=[("c1", "read_file", '{"path": ')]),
+        model="m", latency_ms=1, cost_usd=None,
+    )
+    assert "_unparseable_arguments" in reply.tool_calls[0].arguments
+
+
+def test_finish_reasons_map_onto_the_loop_vocabulary():
+    for finish, expected in [("stop", "end_turn"), ("length", "max_tokens"),
+                             ("content_filter", "refusal")]:
+        r = reply_from_response(response(text="x", finish=finish), model="m",
+                                latency_ms=1, cost_usd=None)
+        assert r.stop_reason == expected
+
+
+def test_input_tokens_are_reported_uncached():
+    """LiteLLM folds cache reads and writes into prompt_tokens; take them out."""
+    r = reply_from_response(
+        response(text="x", prompt=10_000, completion=5,
+                 cache_read_input_tokens=7_000, cache_creation_input_tokens=2_000),
+        model="m", latency_ms=1, cost_usd=None,
+    )
+    assert r.usage.input_tokens == 1_000
+    assert r.usage.cache_read_tokens == 7_000
+    assert r.usage.cache_write_tokens == 2_000
+    assert r.usage.prompt_tokens == 10_000
+
+
+def test_openai_style_cached_tokens_are_read_too():
+    r = reply_from_response(
+        response(text="x", prompt=500,
+                 prompt_tokens_details=SimpleNamespace(cached_tokens=300)),
+        model="m", latency_ms=1, cost_usd=None,
+    )
+    assert (r.usage.input_tokens, r.usage.cache_read_tokens) == (200, 300)
+
+
+# ------------------------------------------------------------------- client
+
+
+@pytest.fixture
+def wire(monkeypatch):
+    sent: list[dict] = []
+    replies: list = []
+
+    async def fake(**params):
+        sent.append(params)
+        item = replies.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    monkeypatch.setattr(litellm, "acompletion", fake)
+    monkeypatch.setattr(litellm, "completion_cost", lambda **kw: 0.0)
+    monkeypatch.setattr(llm.asyncio, "sleep", _no_sleep)
+    return sent, replies
+
+
+async def _no_sleep(_):
+    return None
+
+
+async def test_anthropic_requests_carry_the_breakpoint_and_groq_requests_do_not(wire):
+    sent, replies = wire
+    replies += [response(text="a"), response(text="b")]
+    system = Conversation(system_prompt="SYS").system_blocks()
+    await LLMClient(model="anthropic/claude-sonnet-5").chat([{"role": "user", "content": "hi"}], system=system)
+    await LLMClient(model="groq/llama-3.3-70b-versatile").chat([{"role": "user", "content": "hi"}], system=system)
+    assert sent[0]["messages"][0]["content"][-1]["cache_control"] == {"type": "ephemeral"}
+    assert isinstance(sent[1]["messages"][0]["content"], str)
+
+
+async def test_tools_are_sent_in_function_format(wire):
+    sent, replies = wire
+    replies.append(response(text="ok"))
+    from codepilot.tools import schemas
+
+    await LLMClient(model="groq/x").chat([{"role": "user", "content": "hi"}], tools=schemas(["finish"]))
+    assert sent[0]["tools"][0]["type"] == "function"
+    assert sent[0]["tools"][0]["function"]["name"] == "finish"
+
+
+async def test_a_rate_limit_is_retried_and_then_succeeds(wire):
+    sent, replies = wire
+    replies += [
+        litellm.RateLimitError("slow down", llm_provider="groq", model="x"),
+        response(text="done"),
+    ]
+    reply = await LLMClient(model="groq/x").chat([{"role": "user", "content": "hi"}])
+    assert reply.text == "done"
+    assert len(sent) == 2
+
+
+async def test_a_request_too_large_for_the_tier_is_not_retried(wire):
+    sent, replies = wire
+    replies.append(
+        litellm.RateLimitError("Request too large for model: TPM limit 12000", llm_provider="groq", model="x")
+    )
+    with pytest.raises(LLMError, match="Request too large"):
+        await LLMClient(model="groq/x").chat([{"role": "user", "content": "hi"}])
+    assert len(sent) == 1
+
+
+async def test_a_missing_model_is_an_llm_error_naming_it(wire):
+    _, replies = wire
+    replies.append(litellm.NotFoundError("no such model", llm_provider="groq", model="x"))
+    with pytest.raises(LLMError, match="groq/gone"):
+        await LLMClient(model="groq/gone").chat([{"role": "user", "content": "hi"}])
+
+
+async def test_a_rejected_key_is_an_llm_error(wire):
+    _, replies = wire
+    replies.append(litellm.AuthenticationError("bad key", llm_provider="groq", model="x"))
+    with pytest.raises(LLMError, match="rejected"):
+        await LLMClient(model="groq/x").chat([{"role": "user", "content": "hi"}])
+
+
+async def test_validate_names_the_missing_key(monkeypatch):
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    with pytest.raises(LLMError, match="GROQ_API_KEY"):
+        await LLMClient(model="groq/llama-3.3-70b-versatile").validate()
+
+
+def test_the_fallback_price_table_prices_cache_reads():
+    full = llm.price_of("claude-opus-5", 1000, 0)
+    cached = llm.price_of("claude-opus-5", 0, 0, cache_read_tokens=1000)
+    assert cached < full
+    assert llm.price_of("nobody/knows-this-model", 1, 1) is None
+
+
+def test_the_cli_names_the_key_the_chosen_model_needs(tmp_path, monkeypatch, capsys):
+    """Not ANTHROPIC_API_KEY for a Groq model: the message must point at the
+    variable that would actually fix it."""
+    from codepilot.cli import main
+
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    code = main(["-C", str(tmp_path), "run", "--model", "groq/llama-3.3-70b-versatile", "x"])
+    assert code == 2
+    assert "GROQ_API_KEY" in capsys.readouterr().out

@@ -437,15 +437,19 @@ async def _hosted_refusals() -> str:
 
 
 async def _api_key(live: bool = False) -> str:
-    key = os.getenv("ANTHROPIC_API_KEY", "")
+    from codepilot.llm import STRONG_MODEL
+    from codepilot.providers import key_env_for_model
+
+    env = key_env_for_model(STRONG_MODEL) or "ANTHROPIC_API_KEY"
+    key = os.getenv(env, "")
     if not key:
         if live:
-            raise RuntimeError("--live needs ANTHROPIC_API_KEY (put it in .env)")
+            raise RuntimeError(f"--live needs {env} for {STRONG_MODEL} (put it in .env)")
         # A missing key is a fact about this machine, not a broken install, and
         # every CI runner is such a machine. Failing here made the wiring check
         # unusable in the one place it runs unattended.
-        raise Absent("not set — put it in .env before running the agent or --live")
-    return f"present ({key[:7]}…, {len(key)} chars)"
+        raise Absent(f"{env} not set — put it in .env before running the agent or --live")
+    return f"{env} present ({key[:7]}…, {len(key)} chars)"
 
 
 async def _models_live() -> str:
@@ -453,7 +457,7 @@ async def _models_live() -> str:
 
     client = LLMClient()
     await client.validate(STRONG_MODEL, FAST_MODEL)
-    return f"{STRONG_MODEL} and {FAST_MODEL} are both available"
+    return f"keys present for {STRONG_MODEL} and {FAST_MODEL}"
 
 
 async def _tool_call_live() -> str:

@@ -1,10 +1,14 @@
 """
 Provider + model registry for BYOK (bring-your-own-key) multi-provider support.
 
-Single source of truth for which providers/models the UI offers, how to build
-the LiteLLM model string, and which env var holds a key for local eval runs.
-The API exposes this to the frontend via GET /providers so the dropdowns are
-server-driven — edit this file and both backend and frontend stay in sync.
+Single source of truth for which providers/models are offered, how to build
+the LiteLLM model string, and which env var holds a key for local runs.
+`codepilot.llm` accepts any LiteLLM model string; this registry is what the
+CLI's `--provider` shorthand and the benchmark runner resolve against.
+
+`free_tier` marks providers with a no-cost API tier (Groq, Google AI Studio).
+Whether a given key is actually on that tier is a property of the account, not
+of the key string, and cannot be checked from here.
 
 Model lists drift. Verify current IDs at:
   Anthropic  https://docs.anthropic.com/en/docs/about-claude/models
@@ -32,6 +36,7 @@ class Provider:
     key_env: str  # env var used as the key for local eval runs
     key_url: str  # where a user gets an API key (shown in the UI)
     models: tuple[Model, ...]
+    free_tier: bool = False
 
 
 # Curated, tool-capable defaults per provider. The first model listed is the
@@ -76,6 +81,7 @@ PROVIDERS: dict[str, Provider] = {
             Model("gemini-3.5-flash", "Gemini 3.5 Flash"),
             Model("gemini-2.5-flash", "Gemini 2.5 Flash"),
         ),
+        free_tier=True,
     ),
     "groq": Provider(
         key="groq",
@@ -88,6 +94,7 @@ PROVIDERS: dict[str, Provider] = {
             Model("openai/gpt-oss-120b", "GPT-OSS 120B"),
             Model("llama-3.1-8b-instant", "Llama 3.1 8B (instant)"),
         ),
+        free_tier=True,
     ),
 }
 
@@ -108,8 +115,30 @@ def key_env_for(provider: str) -> str:
     return p.key_env
 
 
+def provider_for_model(model: str) -> Provider | None:
+    """The registry entry a LiteLLM model string belongs to, if any.
+
+    A bare Claude id routes to Anthropic, as LiteLLM routes it.
+    """
+    prefix = model.split("/", 1)[0] if "/" in model else ""
+    for p in PROVIDERS.values():
+        if prefix == p.litellm_prefix:
+            return p
+    if model.startswith("claude"):
+        return PROVIDERS["anthropic"]
+    if model.startswith(("gpt-", "o1", "o3", "o4")):
+        return PROVIDERS["openai"]
+    return None
+
+
+def key_env_for_model(model: str) -> str | None:
+    """Env var holding the key a model string needs, or None if unknown."""
+    p = provider_for_model(model)
+    return p.key_env if p else None
+
+
 def providers_payload() -> list[dict]:
-    """Serialize the registry for the frontend dropdowns (GET /providers)."""
+    """Serialize the registry for a UI's dropdowns."""
     return [
         {
             "key": p.key,

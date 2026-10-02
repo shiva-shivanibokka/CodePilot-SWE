@@ -114,7 +114,7 @@ class AgentLoop:
                 reply.cost_usd, reply.usage.input_tokens + reply.usage.output_tokens
             )
             self.convo.usage = self.convo.usage + reply.usage
-            await self.convo.token_count(self.client, self.tools)
+            self.convo.observe(reply.usage)
 
             cost = f"${reply.cost_usd:.5f}" if reply.cost_usd is not None else "unpriced"
             events.emit(
