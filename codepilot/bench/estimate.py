@@ -1,0 +1,149 @@
+"""
+Price a planned study from measured token counts.
+
+    python -m codepilot.bench.estimate                       # from the carried-over recordings
+    python -m codepilot.bench.estimate --results bench/results/smoke/run.jsonl
+
+Token counts per (instance, arm) are averaged from measured runs, scaled to the
+planned design, and priced per model with LiteLLM's cost map (falling back to
+`codepilot.llm.PRICING`, which says where its numbers come from). Cache
+discounts are **not** assumed: every input token is priced as uncached, so the
+estimate is an upper bound on input cost for providers that cache.
+
+Scaling, stated so it can be checked:
+* agent: tokens per attempt x attempts;
+* agentless: (tokens per call) x (1 localisation + N samples), where tokens per
+  call is the measured total divided by the measured number of calls.
+"""
+
+from __future__ import annotations
+
+import argparse
+import glob
+import json
+import statistics
+from pathlib import Path
+
+from codepilot.llm import PRICING, _price_key
+
+RECORDINGS = "bench/results/autonomous-swe-agent-recordings/*_*.json"
+MODELS = [
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-haiku-4-5",
+    "gpt-5.6-terra",
+    "gemini/gemini-2.5-flash",
+    "gemini/gemini-3-flash-preview",
+    "groq/openai/gpt-oss-120b",
+    "groq/llama-3.3-70b-versatile",
+]
+
+
+def price(model: str) -> tuple[float, float, str]:
+    """USD per token (input, output), and where the number came from."""
+    try:
+        import litellm
+
+        info = litellm.get_model_info(model)
+        from importlib.metadata import version
+
+        return info["input_cost_per_token"], info["output_cost_per_token"], (
+            f"litellm {version('litellm')} cost map"
+        )
+    except Exception:  # noqa: BLE001 - not in the map
+        row = PRICING.get(_price_key(model))
+        if row is None:
+            raise KeyError(f"no price for {model}") from None
+        return row[0], row[1], "codepilot.llm.PRICING (re-verify before paying)"
+
+
+def measured_from_recordings(pattern: str = RECORDINGS) -> dict:
+    """Per-arm means from Autonomous-SWE-Agent's recordings (B's own format)."""
+    arms: dict[str, list[dict]] = {"agent": [], "agentless": []}
+    for f in glob.glob(pattern):
+        d = json.loads(Path(f).read_text(encoding="utf-8"))
+        calls = d["turns"] if d["approach"] == "agent" else 1 + int(d.get("candidates") or 0)
+        arms[d["approach"]].append({"in": d["inputTokens"], "out": d["outputTokens"], "calls": calls})
+    return _summarise(arms, attempts=1, samples={"agentless": 4})
+
+
+def measured_from_results(path: str) -> dict:
+    """Per-arm means from this repository's `bench.run` JSONL output."""
+    arms: dict[str, list[dict]] = {"agent": [], "agentless": []}
+    attempts = 1
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        r = json.loads(line)
+        if r.get("arm") not in arms or r.get("infra_error"):
+            continue
+        attempts = r.get("attempts", 1)
+        arms[r["arm"]].append({
+            "in": r["input_tokens"] + r["cache_read_tokens"] + r["cache_write_tokens"],
+            "out": r["output_tokens"], "calls": r["model_calls"],
+        })
+    return _summarise(arms, attempts=attempts, samples={"agentless": attempts})
+
+
+def _summarise(arms, attempts, samples) -> dict:
+    out = {}
+    for arm, rows in arms.items():
+        if not rows:
+            continue
+        mean_in = statistics.mean(r["in"] for r in rows)
+        mean_out = statistics.mean(r["out"] for r in rows)
+        calls = statistics.mean(r["calls"] for r in rows)
+        if arm == "agent":
+            out[arm] = {"in_per_unit": mean_in / attempts, "out_per_unit": mean_out / attempts,
+                        "unit": "attempt", "n": len(rows)}
+        else:
+            out[arm] = {"in_per_unit": mean_in / calls, "out_per_unit": mean_out / calls,
+                        "unit": "call", "n": len(rows)}
+    return out
+
+
+def plan_tokens(measured: dict, instances: int, seeds: int, attempts: int) -> dict:
+    runs = instances * seeds
+    tokens = {}
+    if "agent" in measured:
+        m = measured["agent"]
+        tokens["agent"] = (runs * attempts * m["in_per_unit"], runs * attempts * m["out_per_unit"])
+    if "agentless" in measured:
+        m = measured["agentless"]
+        calls = 1 + attempts
+        tokens["agentless"] = (runs * calls * m["in_per_unit"], runs * calls * m["out_per_unit"])
+    return tokens
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--results", help="bench.run JSONL to measure from (default: the recordings)")
+    ap.add_argument("--instances", type=int, default=50)
+    ap.add_argument("--seeds", type=int, default=3)
+    ap.add_argument("--attempts", type=int, default=3)
+    ap.add_argument("--hardness", type=float, default=1.0,
+                    help="multiply measured tokens (the recordings are 4 hand-picked, easy instances)")
+    args = ap.parse_args(argv)
+
+    measured = measured_from_results(args.results) if args.results else measured_from_recordings()
+    tokens = plan_tokens(measured, args.instances, args.seeds, args.attempts)
+    total_in = sum(t[0] for t in tokens.values()) * args.hardness
+    total_out = sum(t[1] for t in tokens.values()) * args.hardness
+
+    print(f"measured: {json.dumps(measured, indent=None)}")
+    print(f"design: {args.instances} instances x {args.seeds} seeds x arms {list(tokens)} "
+          f"x {args.attempts} attempts/samples, hardness x{args.hardness}")
+    for arm, (i, o) in tokens.items():
+        print(f"  {arm:<9} {i * args.hardness / 1e6:8.2f}M in  {o * args.hardness / 1e6:6.2f}M out")
+    print(f"  {'total':<9} {total_in / 1e6:8.2f}M in  {total_out / 1e6:6.2f}M out\n")
+    print(f"{'model':<34} {'$/M in':>7} {'$/M out':>8} {'USD':>9}  price source")
+    for model in MODELS:
+        try:
+            p_in, p_out, src = price(model)
+        except KeyError:
+            continue
+        usd = total_in * p_in + total_out * p_out
+        print(f"{model:<34} {p_in * 1e6:7.2f} {p_out * 1e6:8.2f} {usd:9.2f}  {src}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

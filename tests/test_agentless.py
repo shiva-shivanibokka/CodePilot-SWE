@@ -116,3 +116,15 @@ def test_the_tests_nearest_a_changed_file_are_chosen():
 
 def test_the_sampling_schedule_is_greedy_then_diverse():
     assert [temperature_for(i) for i in range(3)] == [0.2, 1.0, 1.0]
+
+
+def test_the_cost_estimate_scales_attempts_and_calls_as_documented():
+    from codepilot.bench.estimate import plan_tokens
+
+    measured = {
+        "agent": {"in_per_unit": 1000, "out_per_unit": 10},
+        "agentless": {"in_per_unit": 100, "out_per_unit": 1},
+    }
+    t = plan_tokens(measured, instances=50, seeds=3, attempts=3)
+    assert t["agent"] == (150 * 3 * 1000, 150 * 3 * 10)
+    assert t["agentless"] == (150 * 4 * 100, 150 * 4 * 1)  # 1 localisation + 3 samples
