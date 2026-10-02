@@ -30,9 +30,12 @@ schemas (agent only), and turn structure. Table in `codepilot/bench/prompts.py`.
 
 ## Before the study
 
-1. **Harness check, free.** For all 50 instances:
+1. **Harness check, free.** Done for the four smoke instances on
+   2026-10-02 (`bench/results/harness_check/`): gold resolved and empty did
+   not on all four. For the study, repeat it on all 50:
    `python -m codepilot.bench.run --sample 50 --seed 0 --arms gold empty --backend docker --image official`.
-   Every `gold` must resolve and every `empty` must not. An instance where
+   Every `gold` must resolve and every `empty` must run its FAIL_TO_PASS
+   tests and see them fail (D20). An instance where
    either fails is excluded *before* any model runs, and the exclusion is
    reported with the reason. This also measures how many official images
    build/run on the study machine.
@@ -48,6 +51,13 @@ schemas (agent only), and turn structure. Table in `codepilot/bench/prompts.py`.
      --env-file ../Autonomous-SWE-Agent/.env \
      --out bench/results/smoke/$(date +%Y-%m-%d)-gemini-flash.jsonl
    ```
+
+   On this machine `pallets__flask-4992` needs a Python 3.11 venv (add
+   `--python <path to a 3.11 interpreter>`) or the official image
+   (`--backend docker --image official`): under 3.12 its pinned werkzeug
+   trips flask's warnings-as-errors and even the gold patch fails
+   (docs/MERGE_DECISIONS.md, D21). The harness check below passed all four
+   instances that way.
 
    These four instances are **not a sample**: they are the ones
    Autonomous-SWE-Agent already showed build on this Windows machine with the
