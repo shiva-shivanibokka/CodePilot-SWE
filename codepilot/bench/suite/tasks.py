@@ -510,7 +510,7 @@ TASKS: list[Task] = [
     ),
     # ----------------------------------------------------------------- large
     # Everything above is a handful of lines. These five run against a real
-    # 1,600-line package (`evals/fixtures/shop`) with a 437-line pricing
+    # 1,600-line package (`codepilot/bench/suite/fixtures/shop`) with a 437-line pricing
     # module, thirteen different `apply` methods and thirteen `validate`
     # methods — the regime where rewriting a file is expensive and where a
     # regex on a method name returns the wrong definition.

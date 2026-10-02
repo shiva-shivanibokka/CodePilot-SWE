@@ -1,16 +1,16 @@
 """
 The eval runner.
 
-    python -m evals.runner --arms loop pipeline --tier single
-    python -m evals.runner --experiment edit-style
-    python -m evals.runner --dry-run           # no API calls, checks the wiring
+    python -m codepilot.bench.suite.runner --arms loop pipeline --tier single
+    python -m codepilot.bench.suite.runner --experiment edit-style
+    python -m codepilot.bench.suite.runner --dry-run           # no API calls, checks the wiring
 
 Each run gets a fresh temporary git repository, so no task can see another's
 leftovers. The agent works with the same tools and sandbox it uses in anger;
 only the held-out tests are withheld, written after the agent has finished and
 run then. Pass means those tests pass.
 
-Every number the write-up quotes comes out of `evals/results/<date>.json`,
+Every number the write-up quotes comes out of `bench/results/codepilot-suite/<date>.json`,
 which is committed. A claim whose evidence is not in the repository is not a
 claim, it is a memory.
 """
@@ -31,6 +31,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from codepilot.agent.loop import AgentLoop, new_conversation
+from codepilot.bench import checkout
+from codepilot.bench.grading import filter_source_diff
+from codepilot.bench.suite.tasks import HELD_OUT, Task, by_ids, by_tier
 from codepilot.context import Conversation
 from codepilot.events import EventStream
 from codepilot.llm import ROUTED_MODEL, STRONG_MODEL, LLMClient, load_env
@@ -38,9 +41,8 @@ from codepilot.permissions import Budget, PermissionGate
 from codepilot.sandbox.local import LocalSandbox
 from codepilot.tools import ToolContext
 from codepilot.workspace import Workspace
-from evals.tasks import HELD_OUT, Task, by_ids, by_tier
 
-RESULTS_DIR = Path(__file__).parent / "results"
+RESULTS_DIR = Path(__file__).resolve().parents[3] / "bench" / "results" / "codepilot-suite"
 
 
 @dataclass
@@ -66,6 +68,8 @@ class RunResult:
     #: anything the agent did. Counting a 529 as a failed task is the same
     #: mistake as averaging an unreachable judge's zero in as a verdict.
     infra_error: bool = False
+    #: Files in the agent's diff kept out of grading (tests, conftest.py, ...).
+    dropped_from_grading: dict[str, str] = field(default_factory=dict)
 
 
 def _init_repo(root: Path, files: dict[str, str]) -> None:
@@ -139,6 +143,8 @@ async def run_one(
     tmp = Path(tempfile.mkdtemp(prefix=f"eval_{task.id}_"))
     try:
         _init_repo(tmp, task.repo())
+        baseline = checkout.git(tmp, "rev-parse", "HEAD").stdout.strip()
+        keep_ignored = checkout.untracked(tmp, ignored=True)
         stream = EventStream(session_id=f"{task.id}:{arm}")
         ctx = ToolContext(
             workspace=Workspace(root=tmp, session_id="eval"),
@@ -182,6 +188,17 @@ async def run_one(
             error, stopped_by = f"{type(exc).__name__}: {exc}", "error"
             infra = _is_infrastructure(exc)
 
+        # Grade on a clean tree: only the agent's source changes carry over.
+        # Writing the held-out file into the agent's own tree let a conftest.py
+        # it wrote decide the result (tests/test_suite_grading.py).
+        kept, dropped = filter_source_diff(
+            checkout.diff_since(tmp, baseline), set(task.held_out)
+        )
+        checkout.restore_pristine(tmp, baseline, keep_ignored)
+        applied, apply_detail = checkout.apply_patch(tmp, kept)
+        if not applied:
+            error = error or f"agent diff did not apply to a clean tree: {apply_detail}"
+
         # Only now do the held-out tests exist.
         for rel, content in task.held_out.items():
             path = tmp / rel
@@ -209,6 +226,7 @@ async def run_one(
             survivors_lost=_check_survivors(tmp, task),
             error=error,
             infra_error=infra,
+            dropped_from_grading=dropped,
         )
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -425,7 +443,7 @@ async def main() -> int:
         "runs": [asdict(r) for r in results],
     }
     (RESULTS_DIR / name).write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    print(f"\nwritten: evals/results/{name}")
+    print(f"\nwritten: bench/results/codepilot-suite/{name}")
     return 0
 
 

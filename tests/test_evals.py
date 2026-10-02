@@ -11,14 +11,14 @@ from __future__ import annotations
 
 import pytest
 
-from evals.runner import (
+from codepilot.bench.suite.runner import (
     RunResult,
     _check_survivors,
     _is_harness_fault,
     _preflight,
     summarise,
 )
-from evals.tasks import HELD_OUT, TASKS, Task, by_ids, by_tier, load_fixture
+from codepilot.bench.suite.tasks import HELD_OUT, TASKS, Task, by_ids, by_tier, load_fixture
 
 TIERS = ("single", "multi", "debug", "large", "large-debug")
 
@@ -204,7 +204,7 @@ def test_a_provider_outage_is_excluded_not_scored_as_a_failure():
 
 
 def test_the_exclusion_is_reported_not_hidden():
-    from evals.runner import render
+    from codepilot.bench.suite.runner import render
 
     results = [_result(passed=False, infra_error=True, error="Error code: 529")]
     text = render(results, summarise(results))
@@ -221,13 +221,13 @@ def test_the_exclusion_is_reported_not_hidden():
     ],
 )
 def test_provider_failures_are_recognised(exc):
-    from evals.runner import _is_infrastructure
+    from codepilot.bench.suite.runner import _is_infrastructure
 
     assert _is_infrastructure(exc)
 
 
 def test_an_agent_bug_is_not_mistaken_for_an_outage():
-    from evals.runner import _is_infrastructure
+    from codepilot.bench.suite.runner import _is_infrastructure
 
     assert not _is_infrastructure(ValueError("that text does not appear in the file"))
 

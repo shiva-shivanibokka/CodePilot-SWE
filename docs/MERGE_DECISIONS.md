@@ -372,3 +372,28 @@ End-to-end proof with a scripted model and nothing else mocked:
 `tests/test_bench_e2e.py` (both arms resolve; agent conftest cheat not
 resolved; agent attempts go through selection; agentless selection picks the
 majority of regression-free samples over an earlier breaking one).
+
+## D16. CodePilot's task suite moved into the bench package, graded on a clean tree
+
+**What.** `evals/{tasks,runner}.py` and `evals/fixtures/` moved (with history,
+`git mv`) to `codepilot/bench/suite/`; `evals/results/` moved to
+`bench/results/codepilot-suite/` (files unchanged). Imports, the CI dry-run
+step, `codepilot doctor`, ruff's exclude and `.dockerignore` updated. Run as
+`python -m codepilot.bench.suite.runner`.
+
+**Bug reproduced, then fixed.** `tests/test_suite_grading.py::test_an_agent_written_conftest_does_not_pass_a_suite_task`
+failed before the change: a scripted model that only wrote a forcing
+`tests/conftest.py` and finished was scored `passed=True` ("2 passed") on
+`empty-guard`, because the held-out file was written into the agent's tree.
+`run_one` now takes the agent's diff since the fixture commit, restores the
+tree, applies only the filtered source diff (`grading.filter_source_diff`,
+held-out paths protected), then writes the held-out tests. Positive control:
+`test_a_real_fix_still_passes`. `RunResult` gains `dropped_from_grading`.
+
+**Effect on committed results.** A's eight results files were produced by the
+old runner. Their pass/fail could in principle have been flipped this way; the
+recorded `files_edited` lists can be checked for a `conftest.py`:
+across all 150 committed runs, **none** lists a `conftest.py` among
+`files_edited`. That field records `edit_file`/`write_file` paths (loop) or new
+files (pipeline), so a conftest created through `run_command` would not appear;
+the results are carried over as measured, with this caveat in the README.

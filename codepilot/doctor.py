@@ -344,7 +344,7 @@ async def _eval_fixtures() -> str:
     not there any more. This turns that into a failed check instead of a
     number nobody questions.
     """
-    from evals.tasks import TASKS
+    from codepilot.bench.suite.tasks import TASKS
 
     checked = 0
     for task in TASKS:
@@ -364,7 +364,7 @@ async def _eval_fixtures() -> str:
 
 async def _eval_fixture_is_large() -> str:
     """Experiments 2 and 3 need a repository big enough to separate the arms."""
-    from evals.tasks import load_fixture
+    from codepilot.bench.suite.tasks import load_fixture
 
     repo = load_fixture("shop")
     lines = sum(len(text.splitlines()) for text in repo.values())
