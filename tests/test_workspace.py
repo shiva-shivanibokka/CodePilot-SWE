@@ -209,3 +209,32 @@ def test_undo_never_deletes_the_session_log(tmp_path):
 
     ws.undo()
     assert log.exists(), "undo erased the record of what it undid"
+
+
+# ------------------------------------------------------------ line endings
+#
+# Reproduced on Windows before the fix: read_text() turns CRLF into LF and
+# write_text() turns every LF into CRLF, so one edit to an LF file rewrote the
+# whole file's line endings, and the agent's diff touched every line.
+
+
+def test_an_edit_preserves_lf_line_endings(tmp_path):
+    ws = Workspace(root=tmp_path)
+    (tmp_path / "m.py").write_bytes(b"a = 1\nb = 2\n")
+    ws.read("m.py")
+    ws.edit("m.py", "b = 2", "b = 3")
+    assert (tmp_path / "m.py").read_bytes() == b"a = 1\nb = 3\n"
+
+
+def test_an_edit_preserves_crlf_line_endings(tmp_path):
+    ws = Workspace(root=tmp_path)
+    (tmp_path / "m.py").write_bytes(b"a = 1\r\nb = 2\r\n")
+    ws.read("m.py")
+    ws.edit("m.py", "b = 2", "b = 3")
+    assert (tmp_path / "m.py").read_bytes() == b"a = 1\r\nb = 3\r\n"
+
+
+def test_writing_a_new_file_writes_exactly_what_was_given(tmp_path):
+    ws = Workspace(root=tmp_path)
+    ws.write("new.py", "x = 1\ny = 2\n")
+    assert (tmp_path / "new.py").read_bytes() == b"x = 1\ny = 2\n"

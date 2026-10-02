@@ -289,3 +289,22 @@ the test caught it (`No module named pytest`) and PATH selection replaced it.
 scrubbing, bash. **Not ported:** B's `/repo` virtual root and output path
 rewriting (no longer needed), B's tar-based file I/O (the checkout is on the
 host).
+
+## D11. Workspace writes keep the file's line endings (Windows bug, reproduced)
+
+**What.** `Workspace.write` and `Workspace.edit` write back with the file's
+existing line ending (`_newline_of`); new files get `\n`.
+
+**Reproduced first.** `tests/test_workspace.py::test_an_edit_preserves_lf_line_endings`
+and `test_writing_a_new_file_writes_exactly_what_was_given` failed on this
+Windows machine: `read_text` normalises to `\n` and `write_text` translates
+every `\n` to `\r\n`, so one edit rewrote every line of an LF file
+(`b'a = 1\r\nb = 3\r\n'`). On Linux the tests passed before and after, which is
+why A's Linux CI never saw it. Found while making agentless candidates go
+through the same `Workspace` writes as the agent's edits.
+
+**Related.** Benchmark checkouts set `core.autocrlf=false` locally, so the
+working tree holds the repository's bytes regardless of the machine's global
+setting (this machine checks LF files out as CRLF: `file` reported CRLF for
+A's own sources right after the clone in D1).
+`tests/test_bench_checkout.py::test_the_checkout_holds_the_repositorys_bytes_whatever_autocrlf_says`.

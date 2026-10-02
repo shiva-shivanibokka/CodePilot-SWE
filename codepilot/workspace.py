@@ -276,7 +276,7 @@ class Workspace:
         self._assert_fresh(path, target)
         target.parent.mkdir(parents=True, exist_ok=True)
         existed = target.exists()
-        target.write_text(content, encoding="utf-8")
+        target.write_text(content, encoding="utf-8", newline=_newline_of(target))
         self._read_ledger[self.relative(target)] = self._hash(content)
         verb = "Updated" if existed else "Created"
         return f"{verb} {self.relative(target)} ({content.count(chr(10)) + 1} lines)"
@@ -308,7 +308,7 @@ class Workspace:
             )
 
         updated = content.replace(old, new) if replace_all else content.replace(old, new, 1)
-        target.write_text(updated, encoding="utf-8")
+        target.write_text(updated, encoding="utf-8", newline=_newline_of(target))
         self._read_ledger[self.relative(target)] = self._hash(updated)
         where = f"{count} occurrences" if replace_all and count > 1 else "1 occurrence"
         return f"Edited {self.relative(target)} ({where})"
@@ -316,3 +316,20 @@ class Workspace:
     def mark_read(self, path: str, content: str) -> None:
         """Record a read the workspace did not perform itself (replay, tests)."""
         self._read_ledger[self.relative(self.resolve(path))] = self._hash(content)
+
+
+def _newline_of(path: Path) -> str:
+    r"""The line ending to write `path` back with.
+
+    Reads hand the model universal-newline text ("\n" only), which is what its
+    exact-string edits are written against. Writing that back with a plain
+    `write_text` translates every "\n" to the platform's line ending, so on
+    Windows one edit to an LF file rewrote every line of it. Keep whatever the
+    file already uses; a new file gets "\n".
+    """
+    try:
+        with path.open("rb") as fh:
+            head = fh.read(65536)
+    except OSError:
+        return "\n"
+    return "\r\n" if b"\r\n" in head else "\n"
