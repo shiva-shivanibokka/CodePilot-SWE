@@ -4,7 +4,7 @@ The prompts every benchmark arm is given.
 Fairness rule: **every arm's system prompt starts with the same `SHARED_BASE`**,
 byte for byte, and each request carries exactly one cache breakpoint, on the
 last (and only) system block. What differs between arms is written down here
-and in `bench/README` of the results, not discovered later:
+and in the README and bench/STUDY_PLAN.md, not discovered later:
 
 | | agent | agentless localize | agentless repair |
 |---|---|---|---|
