@@ -158,7 +158,9 @@ commands run as you, so use it only on repositories you would run yourself.
 the model's first command; `--image official` uses the instance's published
 SWE-bench image. The Docker path is tested here against the one official
 image present on the development machine (`pallets__flask-4992`), with the
-local fixture task; no full SWE-bench instance has been run through it.
+local fixture task, and the harness check below ran `pallets__flask-4992`
+through it end to end (gold resolved, empty did not). No model has been run
+through it.
 
 ---
 
@@ -203,6 +205,17 @@ substring selection, `-x`, history-leaking clone), so their `resolved` flags
 are not comparable to anything this harness produces. They are kept because
 they are the only measured SWE-bench token counts available, and the study's
 cost estimate is built on them.
+
+### Harness validation (not a result)
+
+The gold/empty check on the four smoke instances, no model calls
+([`bench/results/harness_check/`](bench/results/harness_check/), 2026-10-02):
+on `pallets__flask-4992` (Python 3.11 venv, and the official SWE-bench image)
+and `sympy__sympy-18199`, `-22714`, `-24213` (Python 3.12 venv), the gold patch
+resolves with every required test passing, and an empty patch leaves the
+FAIL_TO_PASS test failing with every PASS_TO_PASS test passing. Running it
+exposed a gap in the check itself, fixed before these rows were produced
+(MERGE_DECISIONS D20).
 
 ### SWE-bench comparison
 
@@ -270,7 +283,7 @@ free-tier smoke command is prepared there and has not been run.
 ## Development
 
 ```bash
-pytest -q          # 310 passed, 1 skipped (the opt-in Docker test); no key, no network
+pytest -q          # 312 passed, 1 skipped (the opt-in Docker test); no key, no network
 ruff check .
 python -m codepilot.doctor
 ```
