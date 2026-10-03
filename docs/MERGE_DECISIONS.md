@@ -609,3 +609,34 @@ having read or edited anything. Model behaviour, not a harness fault; the
 prompt was not changed to suit it, since that would change the arm under
 study. The first smoke rows, written before this field existed, were discarded
 and the smoke run repeated so every committed row has a transcript.
+
+## D24. `ollama/` models are sent to Ollama's native chat endpoint
+
+**Found by** the first full smoke run on `ollama/qwen2.5:7b` (kept in
+`bench/results/smoke/pre-fix/`). Three of the four agent runs stopped
+`"ended without finish"` after 4–6 calls, and each transcript ends with the
+model's reply recorded as *text*:
+`{"id": "call_…", "type": "function", "function": {"name": "edit_file", "arguments": {…}}}`
+— a tool call, in the nested OpenAI shape, that never became a tool call.
+
+**Cause, from the installed library.** LiteLLM 1.103.2's `ollama/` route is
+`/api/generate` (`litellm/llms/ollama/completion/transformation.py`): the whole
+conversation is flattened into one prompt by `ollama_pt` (prior tool calls
+included, in that nested shape), output is forced to `format: "json"`, and the
+reply is treated as a tool call only if it is a top-level object with `name`
+and `arguments` (lines ~266–301). A model that imitates its own history's shape
+falls through to the "regular JSON" branch and comes back as content. The
+`ollama_chat/` route is `/api/chat`, where Ollama applies the model's chat
+template and parses tool calls itself.
+
+**Reproduction status.** The failure was observed three times in the real run
+(transcripts above). A two-turn replay did not trigger it (3/3 structured
+calls on both routes), so the trigger is conversation length; it was not
+reproduced on demand. The fix was therefore made on the evidence of the run
+plus the library code, and the test pins the routing, not the model behaviour:
+`tests/test_llm.py::test_ollama_models_use_the_native_chat_endpoint` (failed
+first: the request went to `ollama/qwen2.5:7b`).
+
+**Fix.** `LLMClient` sends any `ollama/<model>` request as
+`ollama_chat/<model>` — same server, same model, same options. The smoke run
+was repeated after the fix; both runs are committed.

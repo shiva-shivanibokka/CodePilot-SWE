@@ -280,3 +280,22 @@ async def test_a_prompt_that_cannot_fit_num_ctx_is_refused_not_truncated(wire):
             [{"role": "user", "content": big}], max_tokens=512
         )
     assert sent == [], "the request must not be sent"
+
+
+async def test_ollama_models_use_the_native_chat_endpoint(wire):
+    """Found by the local smoke run (MERGE_DECISIONS D24): LiteLLM's `ollama/`
+    route goes through /api/generate and *emulates* tool calls by forcing JSON
+    output and accepting only a top-level {"name", "arguments"} object. In 3 of
+    4 agent runs qwen2.5:7b answered in the nested OpenAI shape it had seen in
+    its own history ({"id", "type": "function", "function": {...}}), which that
+    parser passes through as plain text, so the loop saw no tool call and
+    stopped. `ollama_chat/` is Ollama's native /api/chat, which parses tool
+    calls itself."""
+    sent, replies = wire
+    replies.append(response(text="ok"))
+    from codepilot.tools import schemas
+
+    await LLMClient(model="ollama/qwen2.5:7b").chat(
+        [{"role": "user", "content": "hi"}], tools=schemas(["finish"])
+    )
+    assert sent[0]["model"] == "ollama_chat/qwen2.5:7b"

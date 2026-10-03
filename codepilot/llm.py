@@ -548,6 +548,14 @@ class LLMClient:
         sys_msg = to_openai_system(system, keep_cache_control=keep)
         if sys_msg is not None:
             wire = [sys_msg, *wire]
+        if model.startswith("ollama/"):
+            # LiteLLM's `ollama/` route is /api/generate, which emulates tool
+            # calls by forcing JSON output and accepting only a top-level
+            # {"name", "arguments"} object; a model that answers in the nested
+            # OpenAI shape gets its call passed through as text (D24).
+            # `ollama_chat/` is Ollama's native /api/chat, which parses the
+            # model's own tool-call format. Same server, same model.
+            model = "ollama_chat/" + model.removeprefix("ollama/")
         params: dict[str, Any] = {
             "model": model,
             "messages": wire,
