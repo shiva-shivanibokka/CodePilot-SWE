@@ -587,3 +587,25 @@ first: `LLMClient` had no `extra`).
 request on flask-4992 (system prompt + 11 tool schemas + issue), LiteLLM's
 `token_counter` said 1,396 tokens and Ollama counted 1,938 (ratio 1.39).
 `/api/ps` confirmed `context_length: 16384` reached the server.
+
+## D23. Result rows carry a compact transcript (gap found by the smoke run)
+
+**Found by** the first local-model smoke row (flask-4992, agent arm):
+`stopped_by: ["finished"]`, 1 model call, no diff, and nothing in the row said
+what the model had done. The row had costs and a grade but no record of the
+model's words or tool calls, so a failure could not be told apart from a
+harness fault.
+
+**Reproduced first.** `tests/test_bench_e2e.py::test_a_result_says_what_the_agent_did`
+failed (`InstanceResult` had no `transcript`). Now every row has `transcript`:
+assistant text, each tool call (truncated arguments) and the first line of its
+result, budget/error/done events; agentless rows record the localisation and
+each sample's fate.
+
+**What the flask row was.** Replayed as a single request (same system prompt,
+tools, issue, temperature 0.2, seed 0): qwen2.5:7b answered with a `finish`
+call whose summary *describes* a fix ("add a `mode` parameter…") without
+having read or edited anything. Model behaviour, not a harness fault; the
+prompt was not changed to suit it, since that would change the arm under
+study. The first smoke rows, written before this field existed, were discarded
+and the smoke run repeated so every committed row has a transcript.

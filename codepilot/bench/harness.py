@@ -121,6 +121,10 @@ class InstanceResult:
     error: str = ""
     infra_error: bool = False
     notes: list[str] = field(default_factory=list)
+    #: What the arm did, compactly: the model's words, each tool call and the
+    #: first line of its result, how it stopped. Without it a row can say an
+    #: agent "finished" after one call and nothing about why.
+    transcript: list[dict] = field(default_factory=list)
     timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict:
@@ -130,6 +134,24 @@ class InstanceResult:
 # ---------------------------------------------------------------------------
 # The agent arm
 # ---------------------------------------------------------------------------
+
+
+def transcript_of(events: EventStream, limit: int = 300) -> list[dict]:
+    """The agent's events as a short, committed-to-disk-sized record."""
+    out: list[dict] = []
+    for e in events.events:
+        if e.type is EventType.ASSISTANT_TEXT:
+            out.append({"kind": "text", "text": e.message[:limit]})
+        elif e.type is EventType.TOOL_CALL:
+            out.append({"kind": "tool_call", "tool": e.data.get("tool"),
+                        "args": str(e.data.get("arguments"))[:limit]})
+        elif e.type is EventType.TOOL_RESULT:
+            out.append({"kind": "tool_result", "tool": e.data.get("tool"),
+                        "error": bool(e.data.get("is_error")), "text": e.message[:limit]})
+        elif e.type in (EventType.DONE, EventType.ERROR, EventType.BUDGET):
+            out.append({"kind": e.type.value if e.type is not EventType.DONE else "done",
+                        "text": e.message[:limit]})
+    return out
 
 
 async def agent_attempt(env: BenchEnv, client, cfg: ArmConfig, issue: str, attempt: int,
@@ -226,6 +248,7 @@ async def _run_arm(env: BenchEnv, instance: dict, arm: str, cfg: ArmConfig, clie
     notes: list[str] = []
     error, infra = "", False
     issue = instance.get("problem_statement", "")
+    agentless_transcript: list[dict] = []
 
     try:
         if arm == "agent":
@@ -246,6 +269,15 @@ async def _run_arm(env: BenchEnv, instance: dict, arm: str, cfg: ArmConfig, clie
             spend.unpriced_calls += run.unpriced_calls
             candidates = run.candidates
             notes += run.notes
+            agentless_transcript = [
+                {"kind": "localize", "files": run.localization.suspect_files[:5],
+                 "locations": run.localization.suspect_locations[:3]},
+                *[
+                    {"kind": "sample", "index": s.index, "path": s.path,
+                     "usable": s.patched is not None, "text": s.note[:300]}
+                    for s in run.repair.samples
+                ],
+            ]
             stopped.append(f"{len(run.candidates)} of {cfg.attempts} samples usable")
         else:
             raise ValueError(f"unknown arm {arm!r}")
@@ -311,4 +343,5 @@ async def _run_arm(env: BenchEnv, instance: dict, arm: str, cfg: ArmConfig, clie
         error=error,
         infra_error=infra,
         notes=notes,
+        transcript=transcript_of(events) + agentless_transcript,
     )

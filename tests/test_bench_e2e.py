@@ -194,3 +194,15 @@ async def test_an_unseeded_run_sends_no_seed(task):
     model = SeedRecorder([AGENT_FIXES], [FIX])
     await run(task, model, ["agentless", "agent"], attempts=1)
     assert set(model.seeds) == {None}
+
+
+async def test_a_result_says_what_the_agent_did(task):
+    """Found by the first local-model smoke run: an agent row read
+    stopped_by=["finished"] after 1 call and nothing recorded why. Every row
+    now carries a compact transcript: the model's words and each tool call."""
+    model = ScriptedModel([AGENT_FIXES], [FIX])
+    agent, agentless = await run(task, model, ["agent", "agentless"], attempts=1)
+    tools = [t["tool"] for t in agent.transcript if t["kind"] == "tool_call"]
+    assert tools == [step[0][0] for step in AGENT_FIXES]
+    assert any(t["kind"] == "done" and "add() subtracted" in t["text"] for t in agent.transcript)
+    assert agentless.transcript, "the agentless arm records its samples too"
