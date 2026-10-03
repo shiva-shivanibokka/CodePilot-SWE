@@ -1,8 +1,8 @@
 # Study plan: a tool-using agent vs. Agentless on SWE-bench Lite
 
 Status: **planned, not run.** No result in this repository answers the
-question below yet. The free-tier smoke test that would prove the pipeline on
-real instances has been prepared but not run (see "Before the study").
+question below yet. The harness check and a local-model smoke test of the
+pipeline have been run (see "Before the study").
 
 ## Question
 
@@ -39,31 +39,25 @@ schemas (agent only), and turn structure. Table in `codepilot/bench/prompts.py`.
    either fails is excluded *before* any model runs, and the exclusion is
    reported with the reason. This also measures how many official images
    build/run on the study machine.
-2. **Smoke test, free tier.** Prepared, not run (the machine was needed for
-   other work):
+2. **Smoke test.** Done on 2026-10-02 on a local model, `ollama/qwen2.5:7b`
+   with a 16k context (no Gemini key was available):
+   `bench/results/smoke/` and its `NOTE.md` hold the command, the caps and
+   every row. Every stage ran on all four instances and both arms; 0/8
+   resolved, as expected of a 7B model; one agent patch reached grading on a
+   pristine tree. It exposed two harness problems, fixed before the committed
+   run (docs/MERGE_DECISIONS.md, D23 transcripts in result rows, D24 the
+   Ollama tool-calling route), and confirmed the overflow guard (D22): one
+   agentless file did not fit 16k and was counted as a failure.
 
-   ```bash
-   python -m codepilot.bench.run \
-     --instances pallets__flask-4992 sympy__sympy-18199 sympy__sympy-22714 sympy__sympy-24213 \
-     --arms gold empty agent agentless --attempts 1 \
-     --model gemini/gemini-2.5-flash --setups bench/setups.json --backend local \
-     --max-calls 30 --max-tokens 300000 \
-     --env-file ../Autonomous-SWE-Agent/.env \
-     --out bench/results/smoke/$(date +%Y-%m-%d)-gemini-flash.jsonl
-   ```
+   On this machine `pallets__flask-4992` needs a Python 3.11 venv
+   (`--python <3.11 interpreter>`) or the official image
+   (`--backend docker --image official`); under 3.12 even its gold patch
+   fails (D21). The four instances are **not a sample**: they are the ones
+   known to build here.
 
-   On this machine `pallets__flask-4992` needs a Python 3.11 venv (add
-   `--python <path to a 3.11 interpreter>`) or the official image
-   (`--backend docker --image official`): under 3.12 its pinned werkzeug
-   trips flask's warnings-as-errors and even the gold patch fails
-   (docs/MERGE_DECISIONS.md, D21). The harness check below passed all four
-   instances that way.
-
-   These four instances are **not a sample**: they are the ones
-   Autonomous-SWE-Agent already showed build on this Windows machine with the
-   local backend (`bench/setups.json`). Results go under `bench/results/smoke/`
-   and are a smoke test of the pipeline, not a result. A free-tier key may be
-   rate-limited mid-run; such rows carry `infra_error` and are excluded.
+   A hosted-model smoke run with the study's own model should still precede the
+   study; the command is the one in `NOTE.md` with `--model` changed and the
+   `num_ctx`/output caps removed.
 3. **Re-price** from the smoke run's own token counts:
    `python -m codepilot.bench.estimate --results bench/results/smoke/<file>.jsonl`.
 
@@ -112,42 +106,55 @@ measure guessing. Before unblinding the arm results:
 Computed by `python -m codepilot.bench.estimate` (reproducible; prices from
 LiteLLM 1.103.2's cost map unless marked).
 
-**Where the token counts come from.** The free-tier smoke run, which was to
-supply them, has not been run. The only measured SWE-bench token counts
-available are the eight runs carried over from Autonomous-SWE-Agent
-(`bench/results/autonomous-swe-agent-recordings/`, claude-sonnet-5, its own
-prompts and tools, four hand-picked instances, no prompt caching):
+**Where the token counts come from.** Two measured sources, and the plan is
+priced on the newer one:
 
-* agent: **42,835** input and **1,567** output tokens per attempt (mean of 4);
-* agentless: **10,337** input and **1,185** output tokens per model call
-  (mean of 4 runs of 1 localisation + 4 samples).
+1. **This repository's smoke run** (`bench/results/smoke/`, qwen2.5:7b, the
+   harness and prompts the study will use, 4 instances, N = 1):
+   agent **52,019** input / **2,023** output tokens per attempt (mean of 4);
+   agentless **5,845** input / **303** output tokens per call (mean of 7 calls
+   over 4 runs).
+2. The eight runs carried over from Autonomous-SWE-Agent (claude-sonnet-5, its
+   own prompts and tools): agent 42,835 / 1,567 per attempt; agentless 10,337
+   / 1,185 per call. Kept for comparison: it put the total at 25.48M input +
+   1.42M output tokens and the same dollar range within 4%.
 
 Scaled to the design (150 instance-runs per arm; agent 3 attempts each;
-agentless 1 localisation + 3 samples each): **25.48M input + 1.42M output
-tokens** (agent 19.28M / 0.71M, agentless 6.20M / 0.71M).
+agentless 1 localisation + 3 samples each), from the smoke run:
+**26.92M input + 1.09M output tokens** (agent 23.41M / 0.91M, agentless
+3.51M / 0.18M). `python -m codepilot.bench.estimate --results
+bench/results/smoke/2026-10-02-qwen2.5-7b.jsonl [--hardness 3]`:
 
 | model | $/M in | $/M out | as measured (x1) | harder instances (x3) |
 |---|---:|---:|---:|---:|
-| claude-opus-5 | 5.00 | 25.00 | $162.80 | $488.39 |
-| claude-sonnet-5 | 2.00 | 10.00 | $65.12 | $195.36 |
-| claude-haiku-4-5 | 1.00 | 5.00 | $32.56 | $97.68 |
-| gpt-5.6-terra | 2.00 | 12.00 | $67.95 | $203.85 |
-| gemini/gemini-2.5-flash | 0.30 | 2.50 | $11.18 | $33.55 |
-| gemini/gemini-3-flash-preview | 0.50 | 3.00 | $16.99 | $50.96 |
-| groq/openai/gpt-oss-120b | 0.15 | 0.60 | $4.67 | $14.01 |
-| groq/llama-3.3-70b-versatile ¹ | 0.59 | 0.79 | $16.15 | $48.45 |
+| claude-opus-5 | 5.00 | 25.00 | $161.88 | $485.65 |
+| claude-sonnet-5 | 2.00 | 10.00 | $64.75 | $194.26 |
+| claude-haiku-4-5 | 1.00 | 5.00 | $32.38 | $97.13 |
+| gpt-5.6-terra | 2.00 | 12.00 | $66.94 | $200.81 |
+| gemini/gemini-2.5-flash | 0.30 | 2.50 | $10.81 | $32.42 |
+| gemini/gemini-3-flash-preview | 0.50 | 3.00 | $16.73 | $50.20 |
+| groq/openai/gpt-oss-120b | 0.15 | 0.60 | $4.69 | $14.08 |
+| groq/llama-3.3-70b-versatile ¹ | 0.59 | 0.79 | $16.74 | $50.23 |
 
 ¹ Not in LiteLLM's map; price from `codepilot.llm.PRICING` (Groq's published
 on-demand price as known when written) — re-verify before paying.
 
-Read the x1 column as optimistic: the four recorded instances are easy ones
-(6–10 agent turns), and a random 50 will include instances where the agent
-uses its whole 40-call budget. The x3 column is a judgement, not a
-measurement. Hard upper bound from the caps: 450 agent attempts x 800k tokens
-= 360M tokens for the agent arm alone, which no realistic run approaches but
-which bounds the worst case. Caching (where the provider supports it) lowers
-input cost; it is not assumed. The N = 1 secondary run adds roughly a third of
-the agent arm and a half of the agentless arm.
+Why the x1 column is a floor, not a forecast:
+
+* The smoke model stopped early. Every agent run ended by answering in prose
+  after 4–13 calls, well inside the 25-call cap, and agentless samples were
+  short or malformed. A capable model will keep working and write longer
+  replies; the study's cap is 40 calls per attempt.
+* Counts are in Qwen's tokenizer; other providers' tokenizers count the same
+  text somewhat differently.
+* The four instances are hand-picked, easier than a random 50.
+
+The x3 column is a judgement, not a measurement. Hard upper bound from the
+caps: 450 agent attempts x 800k tokens = 360M tokens for the agent arm alone.
+Caching (where the provider supports it) lowers input cost; it is not assumed.
+The N = 1 secondary run adds roughly a third of the agent arm and a half of
+the agentless arm. Re-price from the first hosted-model smoke run before
+committing money.
 
 **Recommendation.** Run the study first on `gemini/gemini-2.5-flash`
 (about $11–34) or `groq/openai/gpt-oss-120b` (about $5–14) — or on their free

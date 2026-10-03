@@ -1,0 +1,17 @@
+1 instance(s) x arms ['agent', 'agentless'] -> bench\results\smoke\2026-10-02-qwen2.5-7b.jsonl
+[1/1] pallets__flask-4992
+    agent     resolved=False  $0.0000  4 calls  28s
+    agentless resolved=False  $0.0000  2 calls  19s
+1 instance(s) x arms ['agent', 'agentless'] -> bench\results\smoke\2026-10-02-qwen2.5-7b.jsonl
+[1/1] sympy__sympy-18199
+    agent     resolved=False  $0.0000  13 calls  290s
+    agentless resolved=False  $0.0000  1 calls  8s
+1 instance(s) x arms ['agent', 'agentless'] -> bench\results\smoke\2026-10-02-qwen2.5-7b.jsonl
+[1/1] sympy__sympy-22714
+    agent     resolved=False  $0.0000  8 calls  142s
+    agentless resolved=False  $0.0000  2 calls  41s
+1 instance(s) x arms ['agent', 'agentless'] -> bench\results\smoke\2026-10-02-qwen2.5-7b.jsonl
+[1/1] sympy__sympy-24213
+    agent     resolved=False  $0.0000  12 calls  134s
+    agentless resolved=False  $0.0000  2 calls  14s
+ALLDONE

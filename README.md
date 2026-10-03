@@ -15,7 +15,8 @@ tools — beats a fixed, tool-free pipeline on real GitHub issues.
 **What has been measured, and what has not.** The agent's design choices were
 measured on CodePilot's own 20-task suite (below). The SWE-bench comparison
 this repository is built for **has not been run**: the harness is tested
-offline end to end, the plan and its cost are in
+offline end to end and was smoke-tested on four real instances with a local
+7B model (0/8 resolved, as expected), the plan and its cost are in
 [`bench/STUDY_PLAN.md`](bench/STUDY_PLAN.md), and nothing here should be read
 as a SWE-bench score.
 
@@ -217,22 +218,32 @@ FAIL_TO_PASS test failing with every PASS_TO_PASS test passing. Running it
 exposed a gap in the check itself, fixed before these rows were produced
 (MERGE_DECISIONS D20).
 
+### Smoke test of the pipeline (not a result)
+
+Both arms on the same four instances with a local 7B model,
+`ollama/qwen2.5:7b` at a 16k context, N = 1, seed 0
+([`bench/results/smoke/`](bench/results/smoke/), 2026-10-02). Every stage
+ran end to end on real instances, including Docker for flask-4992; **0 of 8
+resolved**, as expected of a 7B model. Each row records tokens, calls, wall
+time and a transcript. The run exposed two harness problems that were fixed
+before the committed rows (MERGE_DECISIONS D23, D24).
+
 ### SWE-bench comparison
 
 Not run. [`bench/STUDY_PLAN.md`](bench/STUDY_PLAN.md): 50 instances, 3 seeds,
 both arms budget-matched at N = 3, an issue/gold-patch mismatch analysis, and a
-priced estimate of **$4.67–$162.80** depending on the model (25.5M input and
-1.4M output tokens, from the recordings' measured counts; roughly three times
-that if the random instances are harder than the four recorded ones). A
-free-tier smoke command is prepared there and has not been run.
+priced estimate of **$4.69–$161.88** depending on the model (26.9M input and
+1.1M output tokens, scaled from the smoke run's measured counts; roughly three
+times that if instances are harder and a stronger model works longer than the
+7B smoke model did).
 
 ---
 
 ## Limitations
 
 * **No SWE-bench result yet**, as above. The harness is exercised end to end
-  only on a local fixture task with a scripted model
-  (`tests/test_bench_e2e.py`).
+  offline with a scripted model (`tests/test_bench_e2e.py`) and on four real
+  instances with a local 7B model (the smoke test).
 * **The in-repo grader is not the official one.** It applies the official
   criterion (every FAIL_TO_PASS and PASS_TO_PASS id passes), in this
   repository's environment. Django support is implemented from SWE-bench's own
@@ -283,7 +294,7 @@ free-tier smoke command is prepared there and has not been run.
 ## Development
 
 ```bash
-pytest -q          # 312 passed, 1 skipped (the opt-in Docker test); no key, no network
+pytest -q          # 316 passed, 1 skipped (the opt-in Docker test); no key, no network
 ruff check .
 python -m codepilot.doctor
 ```
