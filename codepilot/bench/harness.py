@@ -70,6 +70,8 @@ class ArmConfig:
     #: Run seed. Agent attempt k sends seed*1000+k; agentless sample k sends
     #: seed*1000+500+k; localisation seed*1000+999. None sends no seed.
     seed: int | None = None
+    #: Output tokens per agent call. Lower it for a small context window.
+    max_output_tokens: int = 8192
 
 
 @dataclass
@@ -152,6 +154,7 @@ async def agent_attempt(env: BenchEnv, client, cfg: ArmConfig, issue: str, attem
         tool_names=cfg.tools, effort=None, model=cfg.model,
         temperature=0.2 if attempt == 0 else 1.0,
         seed=None if cfg.seed is None else cfg.seed * 1000 + attempt,
+        max_tokens=cfg.max_output_tokens,
     )
     before = len(events.events)
     stopped_by, error = "error", None

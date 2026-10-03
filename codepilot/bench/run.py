@@ -124,6 +124,10 @@ async def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-model-seed", action="store_true",
                     help="do not send a seed to the model")
     ap.add_argument("--api-base", default=None, help="a self-hosted endpoint, e.g. for Ollama")
+    ap.add_argument("--model-option", action="append", default=[], metavar="KEY=VALUE",
+                    help="provider option sent with every request, e.g. num_ctx=16384")
+    ap.add_argument("--max-output-tokens", type=int, default=8192, dest="max_output_tokens",
+                    help="output tokens per agent call")
     ap.add_argument("--arms", nargs="+", default=["agent", "agentless"], choices=[*ARMS, *CHECK_ARMS])
     ap.add_argument("--model", default=os.getenv("CODEPILOT_BENCH_MODEL", "gemini/gemini-2.5-flash"))
     ap.add_argument("--attempts", type=int, default=1,
@@ -168,10 +172,15 @@ async def main(argv: list[str] | None = None) -> int:
         model=args.model, attempts=args.attempts, max_usd=args.max_cost,
         max_turns=args.max_calls, max_tokens=args.max_tokens, compact_at=args.compact_at,
         seed=None if args.no_model_seed else args.seed,
+        max_output_tokens=args.max_output_tokens,
     )
+    extra = {}
+    for item in args.model_option:
+        key, _, value = item.partition("=")
+        extra[key] = int(value) if value.isdigit() else value
     from codepilot.llm import LLMClient
 
-    client = LLMClient(model=args.model, api_base=args.api_base)
+    client = LLMClient(model=args.model, api_base=args.api_base, extra=extra)
     print(f"{len(instances)} instance(s) x arms {args.arms} -> {out}")
     for n, inst in enumerate(instances, 1):
         iid = inst["instance_id"]

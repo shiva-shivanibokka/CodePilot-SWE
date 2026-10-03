@@ -487,11 +487,14 @@ class LLMClient:
         timeout: float = 300.0,
         backoff_cap: float = 60.0,
         api_base: str | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> None:
         self.model = model
         self._api_key = api_key
         #: For a self-hosted server, e.g. an Ollama endpoint.
         self._api_base = api_base
+        #: Provider-specific request options, sent as-is (Ollama's num_ctx).
+        self._extra = dict(extra or {})
         self._max_retries = max_retries
         self._timeout = timeout
         self._backoff_cap = backoff_cap
@@ -564,6 +567,7 @@ class LLMClient:
             params["seed"] = seed
         if self._api_base:
             params["api_base"] = self._api_base
+        params.update(self._extra)
         if effort:
             # The cost dial, where the model has one. LiteLLM maps it onto each
             # provider's reasoning control and drop_params removes it for
@@ -599,6 +603,8 @@ class LLMClient:
             seed=seed,
         )
 
+        self._check_fits(params, max_tokens)
+
         attempt = 0
         while True:
             start = time.monotonic()
@@ -630,6 +636,38 @@ class LLMClient:
         reply = reply_from_response(response, model=model, latency_ms=latency_ms, cost_usd=None)
         reply.cost_usd = self._cost(response, reply)
         return reply
+
+    #: LiteLLM's token count for a local model is a generic tokenizer and
+    #: undercounts what the model's chat template produces: measured 1,396
+    #: against Ollama's own 1,938 for the benchmark agent's first request
+    #: (tool schemas included). 1.4x covers that with little to spare.
+    LOCAL_COUNT_MARGIN = 1.4
+
+    def _check_fits(self, params: dict[str, Any], max_tokens: int) -> None:
+        """Refuse a request that cannot fit an explicit context window.
+
+        Only when `num_ctx` is set (a local Ollama model). Ollama does not
+        reject an oversized prompt: it truncates it silently, from the front,
+        which drops the system prompt — reproduced on qwen2.5:7b, where a
+        ~26k-token prompt at num_ctx=16384 came back as prompt_tokens=8194
+        with the instructions gone. Failing loudly turns that into a recorded
+        error instead of a mysteriously bad answer.
+        """
+        num_ctx = self._extra.get("num_ctx")
+        if not num_ctx:
+            return
+        try:
+            estimate = _litellm().token_counter(
+                model=params["model"], messages=params["messages"], tools=params.get("tools")
+            )
+        except Exception:  # noqa: BLE001 - fall back to characters
+            estimate = sum(len(json.dumps(m)) for m in params["messages"]) // 4
+        needed = int(estimate * self.LOCAL_COUNT_MARGIN) + max_tokens
+        if needed > int(num_ctx):
+            raise LLMError(
+                f"context overflow: ~{int(estimate * self.LOCAL_COUNT_MARGIN)} prompt tokens "
+                f"+ {max_tokens} output > num_ctx {num_ctx}"
+            )
 
     @staticmethod
     def _cost(response: Any, reply: Reply) -> float | None:

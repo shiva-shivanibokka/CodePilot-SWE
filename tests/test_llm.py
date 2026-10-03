@@ -253,3 +253,30 @@ def test_the_cli_names_the_key_the_chosen_model_needs(tmp_path, monkeypatch, cap
     code = main(["-C", str(tmp_path), "run", "--model", "groq/llama-3.3-70b-versatile", "x"])
     assert code == 2
     assert "GROQ_API_KEY" in capsys.readouterr().out
+
+
+# ------------------------------------------------- local models (Ollama)
+#
+# Reproduced against the real server before the guard existed: a ~26k-token
+# prompt sent to qwen2.5:7b with num_ctx=16384 came back with no error,
+# prompt_tokens=8194, and an answer that had lost the system prompt — Ollama
+# truncates silently. A run would have scored that as the model failing.
+
+
+async def test_provider_options_such_as_num_ctx_are_passed_through(wire):
+    sent, replies = wire
+    replies.append(response(text="ok"))
+    await LLMClient(model="ollama/qwen2.5:7b", extra={"num_ctx": 16384}).chat(
+        [{"role": "user", "content": "hi"}], max_tokens=100
+    )
+    assert sent[0]["num_ctx"] == 16384
+
+
+async def test_a_prompt_that_cannot_fit_num_ctx_is_refused_not_truncated(wire):
+    sent, _ = wire
+    big = "the quick brown fox jumps over the lazy dog " * 2000
+    with pytest.raises(LLMError, match="context overflow"):
+        await LLMClient(model="ollama/qwen2.5:7b", extra={"num_ctx": 4096}).chat(
+            [{"role": "user", "content": big}], max_tokens=512
+        )
+    assert sent == [], "the request must not be sent"

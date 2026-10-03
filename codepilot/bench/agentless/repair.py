@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from codepilot.bench.agentless.jsonx import extract_json
 from codepilot.bench.agentless.localize import LocalizationResult
 from codepilot.bench.prompts import REPAIR_ARM, issue_message, system
-from codepilot.llm import Usage
+from codepilot.llm import LLMError, Usage
 
 #: Room for one search/replace pair. Doubled once on a reply that runs out.
 SAMPLE_MAX_TOKENS = int(os.getenv("AGENTLESS_SAMPLE_MAX_TOKENS", "4096"))
@@ -112,13 +112,28 @@ async def repair(client, model: str | None, root, issue: str, loc: LocalizationR
             + f'\n\n<file path="{path}">\n{contents[path]}\n</file>\n'
             + _hint(spot)
         )
-        reply = await _ask(client, model, prompt, temperature, SAMPLE_MAX_TOKENS, result, sample_seed)
+        try:
+            reply = await _ask(client, model, prompt, temperature, SAMPLE_MAX_TOKENS, result,
+                               sample_seed)
+        except LLMError as exc:
+            if "context overflow" not in str(exc):
+                raise
+            # The file does not fit the model's window: this sample is lost,
+            # the others (other locations) may not be.
+            result.samples.append(Sample(index, path, None, str(exc), temperature))
+            continue
         if reply.stop_reason == "max_tokens":
             # A reply cut off mid-JSON is unusable and was paid for in full.
             # Asking once more with room to finish costs one call; discarding
             # it buys nothing.
-            reply = await _ask(client, model, prompt, temperature, SAMPLE_MAX_TOKENS * 2, result,
-                               sample_seed)
+            try:
+                reply = await _ask(client, model, prompt, temperature, SAMPLE_MAX_TOKENS * 2,
+                                   result, sample_seed)
+            except LLMError as exc:
+                if "context overflow" not in str(exc):
+                    raise
+                result.samples.append(Sample(index, path, None, str(exc), temperature))
+                continue
             result.retried += 1
         patched, note = apply_search_replace(contents[path], reply.text, reply.stop_reason)
         result.samples.append(Sample(index, path, patched, note, temperature))

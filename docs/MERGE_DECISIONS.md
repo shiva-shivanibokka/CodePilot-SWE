@@ -563,3 +563,27 @@ at a 3.11 interpreter already on the machine) and with the official SWE-bench
 image (`--backend docker --image official`, already present locally, nothing
 pulled), gold resolves (`F2P 1/1, P2P 18/18`) and empty does not. The smoke
 command in `bench/STUDY_PLAN.md` now says so.
+
+## D22. Local models: provider options, and a guard against silent truncation
+
+**What.** `LLMClient(extra={...})` sends provider options with every request
+(`bench.run --model-option num_ctx=16384`); `AgentLoop`/`ArmConfig` take an
+output-token cap (`--max-output-tokens`). With `num_ctx` set, a request whose
+estimated prompt (x1.4) plus `max_tokens` exceeds it raises
+`LLMError("context overflow …")` instead of being sent. An agentless sample
+that overflows is recorded as a rejected sample; other overflows end the arm
+with the error recorded, and count as a failure.
+
+**Reproduced first, against the live Ollama server (qwen2.5:7b, Q4_K_M).**
+A system prompt carrying a "secret word" plus a ~26.6k-token user message
+(LiteLLM's estimate), sent with `num_ctx=16384`: no error,
+`prompt_tokens=8194`, and the reply had lost the system prompt. Ollama
+truncates silently, so an oversized agent or agentless prompt would have been
+scored as the model failing. Tests: `tests/test_llm.py::test_a_prompt_that_cannot_fit_num_ctx_is_refused_not_truncated`
+and `test_provider_options_such_as_num_ctx_are_passed_through` (both failed
+first: `LLMClient` had no `extra`).
+
+**The 1.4 margin is measured, not guessed.** For the benchmark agent's first
+request on flask-4992 (system prompt + 11 tool schemas + issue), LiteLLM's
+`token_counter` said 1,396 tokens and Ollama counted 1,938 (ratio 1.39).
+`/api/ps` confirmed `context_length: 16384` reached the server.
