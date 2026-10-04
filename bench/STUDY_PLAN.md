@@ -2,7 +2,9 @@
 
 Status: **planned, not run.** No result in this repository answers the
 question below yet. The harness check and a local-model smoke test of the
-pipeline have been run (see "Before the study").
+pipeline have been run (see "Before the study"). What is funded is a small
+first run on one Claude model ("Funded study", with its exact commands); the
+"Design" below is the full study, which is not funded.
 
 ## Question
 
@@ -11,7 +13,107 @@ the same number of attempts, does a model-driven tool loop (CodePilot's agent)
 resolve more SWE-bench Lite issues than a fixed localise-then-sample pipeline
 (Agentless), and at what cost per resolved issue?
 
-## Design
+## Funded study: $20 on claude-haiku-4-5-20251001
+
+This repository's share of the available budget is **$25**. The study is sized
+to keep a margin of more than 20% under it: the hard project maximum
+(`bench.run.PROJECT_MAX_USD`) and every cap below is **$20**, and that cap
+covers everything in the user-level ledger, the canary included (D41).
+
+| | |
+|---|---|
+| model | `claude-haiku-4-5-20251001` ($1 / $5 per MTok; cache read $0.10, write $1.25 — D26) |
+| instances | **20**, `instances.sample(20, seed=0)` from the frozen Lite rows (D37): django ×8, sympy ×4, sphinx ×2, and one each of astropy, flask, pytest, xarray, requests, scikit-learn |
+| seeds | **1**. Anthropic takes no seed and Haiku does take temperature (D29), so a second seed would be a second sample, not a reproducible repeat |
+| arms, N | agent and agentless, **N = 1** each (no selection), arm order randomised per instance (D35) |
+| backend | Docker, official SWE-bench images (`--image official`): no network while the model acts, enforced (D10, D36) |
+| caps | $0.40 per agent attempt; 40 model calls per attempt; 50,000 prompt tokens per request (larger ones are refused as an arm failure, D39); 2,048 output tokens per agent call; $20 run-wide, reserved atomically before every request (D28, D38, D41) |
+| grading | in-repo clean-tree grader (D9); the official grader (D37) as a cross-check on the submitted patches |
+
+**Cost.** Expected, from the measured smoke tokens
+(`codepilot.bench.estimate --results bench/results/smoke/2026-10-02-qwen2.5-7b.jsonl --instances 20 --seeds 1 --attempts 1`):
+1.27M input + 0.05M output tokens = **$1.54** (x3 for harder instances:
+**$4.61**), with no cache discount assumed. **Worst case from the caps**
+(`--dry-run`, D39/D40): agent $10.91 + agentless $5.18 = **$16.09**, under the
+$20 cap. On Haiku nothing under 4,096 tokens caches, so only the rolling
+breakpoint (D34) can save anything.
+
+**Not comparable to the full design below:** 20 instances, one sample per arm
+and one model can show whether the pipeline produces meaningful numbers and
+roughly where the arms stand; a 20-instance difference smaller than about 25
+points is not distinguishable, and the report must say so.
+
+### Caveats, known before spending
+
+* **No seed on Claude; temperature is sent on Haiku** (D29). Repeating the run
+  does not reproduce it; the response cache (`--response-cache`) does.
+* **Django and compiled-extension repos may fail the harness check:** the
+  checkout is mounted over the image's `/testbed`, so anything the image built
+  in place (C extensions in astropy, scikit-learn; Django's in-tree install)
+  is shadowed. Django grading is unit-tested only. Instances that fail the
+  check are excluded and reported, not fixed during the study.
+* **Agentless regression gate on Django** is skipped (D12); measuring it with
+  Django's own runner and log parser (the SOP-eval worktree's approach, D37)
+  is future work, listed below.
+* **LiteLLM's internal reconnect retry** can bill one request the ledger sees
+  once (D41); at most one extra call per occurrence, inside the margin.
+* **Thinking and compaction are not exercised live** (D31): Haiku does not
+  think unless asked, so the study does not depend on it.
+
+### Runbook
+
+Every command below is run exactly as written by
+`tests/test_runbook.py`, against a fake model client, so the documented
+commands are known to parse, to respect the hard maximum, to take the lock and
+to write the ledger.
+
+1. **Pull the images, checking sizes first.** The harness never pulls
+   (D41). List them with
+   `python -c "from codepilot.bench.instances import sample; print('\n'.join(sorted({r['image'] for r in sample(20, 0)})))"`
+   and `docker pull` each one; ~4 GB each uncompressed (flask-4992's is
+   4.23 GB), 178 GB were free on the planning machine.
+2. **Harness check, free** (no model): every gold patch must resolve and every
+   empty patch must leave its FAIL_TO_PASS tests failing (D20). Instances that
+   fail are excluded before anything is spent, and listed.
+
+<!-- runbook:harness-check -->
+```bash
+python -m codepilot.bench.run --sample 20 --seed 0 --arms gold empty --backend docker --image official --out bench/results/haiku-study/harness-check.jsonl
+```
+
+3. **Dry runs**, which must both exit 0:
+
+<!-- runbook:dry-run -->
+```bash
+python -m codepilot.bench.run --instances pallets__flask-5063 --arms agent agentless --attempts 1 --seed 0 --model claude-haiku-4-5-20251001 --backend docker --image official --max-total-usd 1 --max-cost 0.40 --max-calls 40 --max-prompt-tokens 50000 --max-output-tokens 2048 --dry-run
+python -m codepilot.bench.run --sample 20 --seed 0 --arms agent agentless --attempts 1 --model claude-haiku-4-5-20251001 --backend docker --image official --max-total-usd 20 --max-cost 0.40 --max-calls 40 --max-prompt-tokens 50000 --max-output-tokens 2048 --dry-run
+```
+
+4. **Canary**: one instance, $1 cap. `pallets__flask-5063` is the sample's
+   flask instance; if it fails the harness check, use the first instance of
+   the sample that passed. Read every row and the ledger before going on.
+
+<!-- runbook:canary -->
+```bash
+python -m codepilot.bench.run --instances pallets__flask-5063 --arms agent agentless --attempts 1 --seed 0 --model claude-haiku-4-5-20251001 --backend docker --image official --max-total-usd 1 --max-cost 0.40 --max-calls 40 --max-prompt-tokens 50000 --max-output-tokens 2048 --response-cache bench/.cache/responses --env-file .env --out bench/results/haiku-study/canary.jsonl
+```
+
+5. **Main run**: the 20 instances (minus harness-check exclusions — pass
+   `--instances` with the survivors instead of `--sample` if any failed). The
+   $20 cap includes the canary's spend; the canary instance is served from the
+   response cache.
+
+<!-- runbook:main -->
+```bash
+python -m codepilot.bench.run --sample 20 --seed 0 --arms agent agentless --attempts 1 --model claude-haiku-4-5-20251001 --backend docker --image official --max-total-usd 20 --max-cost 0.40 --max-calls 40 --max-prompt-tokens 50000 --max-output-tokens 2048 --response-cache bench/.cache/responses --env-file .env --out bench/results/haiku-study/main.jsonl
+```
+
+6. If a run dies and its lock stays behind: `python -m codepilot.bench.run
+   --break-stale-lock` (removes it only if its process is gone). Unsettled
+   requests stay charged at their worst case in the ledger
+   (`%LOCALAPPDATA%\sop_eval\codepilot_swe\ledger.sqlite`).
+
+## Design (full study, not funded)
 
 | | |
 |---|---|
@@ -163,8 +265,11 @@ then repeat on one Claude model if the first result is worth confirming.
 
 ## Not in this plan
 
+* Agentless's regression gate on Django, measured with Django's own test
+  runner and log parser instead of being skipped (D12, D37).
 * Agentless's reproduction-test generation (the paper's strongest selection
   signal). Adding it is the natural next experiment; it would change only
   `selection.py`.
-* The official SWE-bench harness as a second grader. Worth running on the final
-  submitted patches of one seed to confirm the in-repo grader agrees.
+* Running the official SWE-bench harness as a second grader. It is wired in
+  (`codepilot/bench/official_grader.py`, D37) but needs the `swebench` package,
+  which is not installed; run it on the funded study's submitted patches.

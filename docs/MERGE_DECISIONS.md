@@ -1175,3 +1175,35 @@ pulls with `docker pull`, which shows the size.
   `tests/test_bench_instances.py::test_committed_results_carry_no_personal_paths`
   and `test_new_result_rows_have_the_home_directory_redacted` (both failed
   first).
+
+## D43. The funded study, and its runbook under test
+
+The fix-phase brief funds one study: this repository's $25 share of a $50 key,
+spent on `claude-haiku-4-5-20251001`. `bench/STUDY_PLAN.md` now has a "Funded
+study" section ahead of the (unfunded) full design: 20 instances from
+`instances.sample(20, seed=0)`, 1 seed, both arms at N = 1, Docker with the
+official images, $0.40 / 40 calls per agent attempt, 50,000 prompt tokens and
+2,048 output tokens per call, and a $20 cap equal to `PROJECT_MAX_USD` (D41),
+a margin of 20% under the $25 share. Numbers, re-run for this entry:
+expected $1.54 (x3: $4.61) from `codepilot.bench.estimate --results
+bench/results/smoke/2026-10-02-qwen2.5-7b.jsonl --instances 20 --seeds 1
+--attempts 1`; worst case $16.09 from the documented `--dry-run`. Order:
+operator-pulled images, the free gold/empty check (failures excluded), both
+dry runs, a 1-instance canary at `--max-total-usd 1`, then the main run, whose
+$20 cap includes the canary (one user-level ledger). Caveats listed there: no
+seed on Claude, `/testbed` shadowing for Django and compiled repos, the Django
+regression gate (D12, D37) as future work, LiteLLM's reconnect-retry gap
+(D41), thinking not exercised live (D31).
+
+Round-3 item 8: the commands are in fenced blocks after `<!-- runbook:NAME -->`
+markers, and `tests/test_runbook.py` parses them and runs each through
+`bench.run.main` with environments and grading faked but the real client,
+ledger and lock (only `litellm.acompletion` is faked). It checks the harness
+check makes no model call and takes no lock; both dry runs exit 0; the canary
+and main run exit 0, hold the lock while the model runs and release it, write
+40 ledgered requests (the canary instance replayed from the response cache)
+and a `config` row with the documented cap; and the main run aborts (exit 3)
+with no request sent when the ledger is already at the cap. All five failed
+before the section existed (no runbook blocks). The "Not in this plan" note on
+the official grader was corrected: it is wired in (D37) but not run.
+
