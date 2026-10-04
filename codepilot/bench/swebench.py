@@ -66,13 +66,20 @@ def _load_via_http(limit: int | None = None) -> list[dict]:
     return rows
 
 
-def load_swebench_lite(limit: int | None = None) -> list[dict]:
+def load_swebench_lite(limit: int | None = None, *, live: bool = False) -> list[dict]:
     """
-    Load SWE-bench-lite instances, in the dataset's own order.
+    SWE-bench Lite instances, in the dataset's own order.
 
-    Prefers the `swebench` package when it is installed and falls back to the
-    dataset's HTTP API, which needs no extra dependency.
+    By default the frozen copy committed in `codepilot/bench/data/` (checked by
+    hash, `instances.py`, D37), so a study draws from exactly the rows it
+    records. `live=True` fetches from the `swebench` package or, failing that,
+    the dataset's HTTP API, as Autonomous-SWE-Agent did.
     """
+    if not live:
+        from codepilot.bench.instances import load_all
+
+        instances = load_all()
+        return instances[:limit] if limit else instances
     try:
         from swebench.harness.utils import load_swebench_dataset
 

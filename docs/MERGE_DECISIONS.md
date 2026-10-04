@@ -933,3 +933,44 @@ Docker backend with official images, where the absence of a network is
 enforced rather than asserted (STUDY_PLAN.md). Changing `SHARED_BASE` changes
 every arm's prompt identically; the smoke rows were produced with the old
 sentence.
+
+## D37. Ported from the SOP-eval worktree: the frozen dataset and an official second grader
+
+Source, credited: the uncommitted `eval_sop/` directory in the worktree another
+agent used to evaluate Autonomous-SWE-Agent
+(`…/scratchpad/wt/Autonomous-SWE-Agent`, branch head `9911b2d`), read on
+2026-10-04 and **copied, not moved** — that worktree was not modified.
+
+1. **Frozen SWE-bench Lite.** `eval_sop/data/swebench_lite.json.gz` (300
+   rows, HF revision `b0dde10…`, fetched 2026-10-01; gz sha256 `b4926541…`,
+   uncompressed sha256 `7d87279f…` checked on every load) and
+   `eval_sop/instances.py` → `codepilot/bench/data/` and
+   `codepilot/bench/instances.py` (plus a `sample(k, seed)` helper).
+   `swebench.load_swebench_lite` / `load_instances` now read it by default
+   (`live=True` for the old HTTP path) and `bench.run --sample K --seed S`
+   draws `instances.seeded_order(S)[:K]`. **Changed behaviour:** the earlier
+   `random.Random(seed).sample(sorted_rows, K)` drew a different set for the
+   same seed; nothing was ever run with it. Tests:
+   `tests/test_bench_instances.py` (300 unique rows, offline loading with
+   `urlopen` patched to fail, same seed → same instances, a tampered file is
+   refused).
+2. **Official grader**, optional. `eval_sop/grader.py` →
+   `codepilot/bench/official_grader.py`, `eval_sop/swebench_compat.py` →
+   `codepilot/bench/swebench_compat.py` (verbatim: stubs `datasets`/`modal`
+   so the `swebench` package's pure functions import without them).
+   `swebench` is imported only when grading and is not a requirement. Two
+   changes: the **"already-applied" fallback is removed** — the original, when
+   every forward apply failed, ran `git apply --check --reverse` and recorded
+   the patch as applied if that succeeded (from reading `grade_patch`), which
+   grades code the agent did not write; and **images are not pulled unless
+   `allow_pull=True`** (several GB each). Tests:
+   `test_the_official_grader_does_not_count_a_reverse_applying_patch_as_applied`,
+   `test_the_official_grader_will_not_pull_an_image_unless_asked`. Not run
+   end to end here (the `swebench` package is not installed).
+3. **Noted as future work, not ported:** the worktree's agentless gate
+   (`eval_sop/agentless_arm.py`) measures regressions with each repository's
+   *official* test command and log parser, because Django's runner never
+   prints "N passed", so a count-based gate rejected every Django candidate.
+   This repository's selection parses per-test outcomes but runs pytest, and
+   skips the regression gate entirely for `django/django` (D12); using the
+   official per-repo command there is listed in STUDY_PLAN.md.

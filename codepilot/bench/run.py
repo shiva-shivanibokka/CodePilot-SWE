@@ -28,7 +28,6 @@ import argparse
 import asyncio
 import json
 import os
-import random
 import re
 import sys
 from dataclasses import asdict
@@ -67,9 +66,11 @@ def redact(text: str) -> tuple[str, int]:
 def choose_instances(args) -> list[dict]:
     if args.instances:
         return swebench.load_instances(args.instances)
-    pool = sorted(swebench.load_swebench_lite(), key=lambda i: i["instance_id"])
-    rng = random.Random(args.seed)
-    return rng.sample(pool, args.sample)
+    # The frozen dataset, in a seeded order (instances.seeded_order): the same
+    # --seed always gives the same instances, offline (D37).
+    from codepilot.bench.instances import sample
+
+    return sample(args.sample, args.seed)
 
 
 def load_keys(paths: list[str]) -> None:
