@@ -665,3 +665,40 @@ version-specific.
 
 **Reproduced first.** `tests/test_pricing.py::test_importing_codepilot_pins_litellm_to_its_bundled_cost_map`
 failed (`None`), then passed.
+
+## D26. Explicit prices for the current Claude models; zero means unpriced; unpriced paid runs refused
+
+**Reproduced first.** `claude-opus-5-5` (the current Opus, and the model the
+review expected a paid run to use) had no `PRICING` row and no entry in
+LiteLLM 1.103.2's map (checked: the map lists `claude-opus-5`,
+`claude-sonnet-5`, `claude-haiku-4-5[-20251001]`, nothing for `*-5-5`), so
+every call's cost was `None`; `Budget.record` counts such calls as
+"unpriced" and never advances `spent_usd`, so the per-attempt dollar ceiling
+could not trigger. `tests/test_pricing.py::test_the_current_claude_models_are_priced`
+and three neighbours failed before the change.
+
+**Prices and their sources** (`codepilot/llm.py::PRICING`, now `Price`
+objects that carry their source):
+
+| model | in $/MTok | out | cache read | cache write (5 min) | source |
+|---|---:|---:|---:|---:|---|
+| claude-opus-5-5 | 4.00 | 20.00 | 0.20 | 5.00 | Anthropic list price, claude-api reference (models table cached 2026-09-25); write = 1.25x input per the same reference's prompt-caching economics |
+| claude-sonnet-5-5 | 2.00 | 10.00 | 0.20 | 2.50 | same |
+| claude-opus-5 | 5.00 | 25.00 | 0.50 | 6.25 | same; identical to LiteLLM 1.103.2's map |
+| claude-sonnet-5 | 2.00 | 10.00 | 0.20 | 2.50 | same; identical to the map |
+| claude-haiku-4-5 | 1.00 | 5.00 | 0.10 | 1.25 | same; identical to the map |
+| Groq rows | | | | | unchanged, marked RE-VERIFY in the code |
+
+The 1-hour TTL (2x input) is never requested by this code, so it is not
+tabulated. Cache-write prices were not independently verified beyond the
+reference's 1.25x rule.
+
+**Behaviour.** `price_for(model)`: explicit row first, then LiteLLM's map; an
+input or output price that is missing **or 0** means no price
+(`test_a_zero_or_missing_price_counts_as_no_price`). Local Ollama models are
+priced at 0 explicitly, not by a missing price. Costs are computed from usage
+by `cost_of` (uncached input, output, cache reads and writes each at their own
+price), replacing `litellm.completion_cost`, whose 0.0 for unknown models the
+old code then had to second-guess. `bench.run` refuses any model arm on an
+unpriced model before loading anything (`test_a_paid_run_on_an_unpriced_model_is_refused_before_anything_starts`);
+`bench.estimate` prints "no price: refused" instead of $0.

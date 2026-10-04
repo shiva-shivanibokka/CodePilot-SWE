@@ -38,6 +38,7 @@ from pathlib import Path
 from codepilot.bench import swebench
 from codepilot.bench.environment import BenchEnv, swebench_image
 from codepilot.bench.harness import ARMS, ArmConfig, InstanceResult, run_instance
+from codepilot.llm import price_for
 
 CHECK_ARMS = ("gold", "empty")
 
@@ -153,6 +154,12 @@ async def main(argv: list[str] | None = None) -> int:
         except (AttributeError, ValueError):
             pass
 
+    model_arms_requested = [a for a in args.arms if a in ARMS]
+    if model_arms_requested and price_for(args.model) is None:
+        # A paid model with no price would run with no dollar ceiling (D26).
+        print(f"  ! {args.model} has no price (codepilot.llm.PRICING or LiteLLM's map); "
+              "refusing to run a model whose spend cannot be capped.")
+        return 2
     load_keys(args.env_file)
     setups = json.loads(Path(args.setups).read_text(encoding="utf-8")) if args.setups else {}
     instances = choose_instances(args)

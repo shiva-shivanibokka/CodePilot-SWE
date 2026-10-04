@@ -6,7 +6,7 @@ Price a planned study from measured token counts.
 
 Token counts per (instance, arm) are averaged from measured runs, scaled to the
 planned design, and priced per model with LiteLLM's cost map (falling back to
-`codepilot.llm.PRICING`, which says where its numbers come from). Cache
+`codepilot.llm.PRICING` rows, which say where their numbers come from, first). Cache
 discounts are **not** assumed: every input token is priced as uncached, so the
 estimate is an upper bound on input cost for providers that cache.
 
@@ -24,7 +24,7 @@ import json
 import statistics
 from pathlib import Path
 
-from codepilot.llm import PRICING, _price_key
+from codepilot.llm import is_local, price_for
 
 RECORDINGS = "bench/results/autonomous-swe-agent-recordings/*_*.json"
 MODELS = [
@@ -40,21 +40,15 @@ MODELS = [
 
 
 def price(model: str) -> tuple[float, float, str]:
-    """USD per token (input, output), and where the number came from."""
-    try:
-        import litellm
+    """USD per token (input, output), and where the number came from.
 
-        info = litellm.get_model_info(model)
-        from importlib.metadata import version
-
-        return info["input_cost_per_token"], info["output_cost_per_token"], (
-            f"litellm {version('litellm')} cost map"
-        )
-    except Exception:  # noqa: BLE001 - not in the map
-        row = PRICING.get(_price_key(model))
-        if row is None:
-            raise KeyError(f"no price for {model}") from None
-        return row[0], row[1], "codepilot.llm.PRICING (re-verify before paying)"
+    Raises KeyError for a model with no price, including a price of 0 in
+    LiteLLM's map: an unpriced model is never estimated at $0 (D26).
+    """
+    p = price_for(model)
+    if p is None or (p.input <= 0 and not is_local(model)):
+        raise KeyError(f"no price for {model}")
+    return p.input, p.output, p.source
 
 
 def measured_from_recordings(pattern: str = RECORDINGS) -> dict:
@@ -139,6 +133,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             p_in, p_out, src = price(model)
         except KeyError:
+            print(f"{model:<34} {'':>7} {'':>8} {'':>9}  no price: refused, not estimated at $0")
             continue
         usd = total_in * p_in + total_out * p_out
         print(f"{model:<34} {p_in * 1e6:7.2f} {p_out * 1e6:8.2f} {usd:9.2f}  {src}")

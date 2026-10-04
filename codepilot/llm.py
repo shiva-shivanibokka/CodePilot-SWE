@@ -82,67 +82,6 @@ FAST_MODEL = os.getenv("CODEPILOT_FAST_MODEL", "claude-haiku-4-5-20251001")
 #: effort dial down on the strong model. Not used by the agent itself.
 ROUTED_MODEL = os.getenv("CODEPILOT_ROUTED_MODEL", "claude-sonnet-5")
 
-#: USD per token, (input, output, cache_read, cache_write), keyed by the model
-#: id without provider prefix or date suffix. Only consulted when LiteLLM's own
-#: cost map does not know the model. The Anthropic rows are the prices the
-#: original Anthropic-only client used; the Groq rows are Groq's published
-#: on-demand prices and must be re-checked before a paid run — Groq models come
-#: and go faster than either table is updated.
-PRICING: dict[str, tuple[float, float, float, float]] = {
-    "claude-opus-5": (5.00e-6, 25.00e-6, 0.50e-6, 6.25e-6),
-    "claude-sonnet-5": (2.00e-6, 10.00e-6, 0.20e-6, 2.50e-6),
-    "claude-haiku-4-5": (1.00e-6, 5.00e-6, 0.10e-6, 1.25e-6),
-    "llama-3.3-70b-versatile": (0.59e-6, 0.79e-6, 0.59e-6, 0.59e-6),
-    "llama-3.1-8b-instant": (0.05e-6, 0.08e-6, 0.05e-6, 0.05e-6),
-    "meta-llama/llama-4-scout-17b-16e-instruct": (0.11e-6, 0.34e-6, 0.11e-6, 0.11e-6),
-}
-
-#: Providers that honour an explicit `cache_control` breakpoint. Everyone else
-#: has it stripped before the request leaves.
-EXPLICIT_CACHE_PROVIDERS = {"anthropic"}
-
-
-def provider_of(model: str) -> str:
-    """The LiteLLM provider a model string routes to, e.g. 'groq'."""
-    try:
-        import litellm
-
-        return litellm.get_llm_provider(model)[1]
-    except Exception:  # noqa: BLE001 - unknown strings fall back to the prefix
-        return model.split("/", 1)[0] if "/" in model else "unknown"
-
-
-def _price_key(model: str) -> str:
-    bare = model.split("/", 1)[1] if model.split("/", 1)[0] in (
-        "anthropic", "groq", "gemini", "openai"
-    ) else model
-    return re.sub(r"-\d{8}$", "", bare)
-
-
-def price_of(
-    model: str,
-    input_tokens: int,
-    output_tokens: int,
-    cache_read_tokens: int = 0,
-    cache_write_tokens: int = 0,
-) -> float | None:
-    """Cost in USD from the fallback table, or None when the model has no price.
-
-    None rather than 0.0: a cost display must be able to tell "free" apart from
-    "unknown", or an unpriced model silently reads as costing nothing.
-    """
-    key = _price_key(model)
-    if key not in PRICING:
-        return None
-    p_in, p_out, p_read, p_write = PRICING[key]
-    return (
-        input_tokens * p_in
-        + output_tokens * p_out
-        + cache_read_tokens * p_read
-        + cache_write_tokens * p_write
-    )
-
-
 @dataclass
 class Usage:
     #: Uncached input tokens only. Cache reads and writes are counted apart.
@@ -163,6 +102,136 @@ class Usage:
     def prompt_tokens(self) -> int:
         """Everything the provider read for this request, cached or not."""
         return self.input_tokens + self.cache_read_tokens + self.cache_write_tokens
+
+
+@dataclass(frozen=True)
+class Price:
+    """USD per token, and where the numbers came from."""
+
+    input: float
+    output: float
+    cache_read: float
+    #: 5-minute-TTL cache write. Only that TTL is ever requested here.
+    cache_write: float
+    source: str
+
+
+_ANTHROPIC_LIST = (
+    "Anthropic first-party list price (claude-api reference, models table cached "
+    "2026-09-25); cache write = 1.25x input for the 5-minute TTL "
+    "(same reference, prompt-caching economics)"
+)
+_GROQ_LIST = "Groq published on-demand price as known when written; RE-VERIFY before a paid run"
+
+#: Explicit prices, keyed by model id without provider prefix or date suffix.
+#: Consulted before LiteLLM's map, because they were checked by hand (D26).
+#: Rows whose source says RE-VERIFY were not.
+PRICING: dict[str, Price] = {
+    "claude-opus-5-5": Price(4.00e-6, 20.00e-6, 0.20e-6, 5.00e-6, _ANTHROPIC_LIST),
+    "claude-sonnet-5-5": Price(2.00e-6, 10.00e-6, 0.20e-6, 2.50e-6, _ANTHROPIC_LIST),
+    "claude-opus-5": Price(5.00e-6, 25.00e-6, 0.50e-6, 6.25e-6,
+                           _ANTHROPIC_LIST + "; matches LiteLLM 1.103.2's map"),
+    "claude-sonnet-5": Price(2.00e-6, 10.00e-6, 0.20e-6, 2.50e-6,
+                             _ANTHROPIC_LIST + "; matches LiteLLM 1.103.2's map"),
+    "claude-haiku-4-5": Price(1.00e-6, 5.00e-6, 0.10e-6, 1.25e-6,
+                              _ANTHROPIC_LIST + "; matches LiteLLM 1.103.2's map"),
+    "llama-3.3-70b-versatile": Price(0.59e-6, 0.79e-6, 0.59e-6, 0.59e-6, _GROQ_LIST),
+    "llama-3.1-8b-instant": Price(0.05e-6, 0.08e-6, 0.05e-6, 0.05e-6, _GROQ_LIST),
+    "meta-llama/llama-4-scout-17b-16e-instruct": Price(0.11e-6, 0.34e-6, 0.11e-6, 0.11e-6, _GROQ_LIST),
+}
+
+#: Providers that run on your own machine. They cost nothing, by definition,
+#: rather than by a missing price being read as zero.
+LOCAL_PROVIDERS = {"ollama", "ollama_chat"}
+
+#: Providers that honour an explicit `cache_control` breakpoint. Everyone else
+#: has it stripped before the request leaves.
+EXPLICIT_CACHE_PROVIDERS = {"anthropic"}
+
+
+def provider_of(model: str) -> str:
+    """The LiteLLM provider a model string routes to, e.g. 'groq'."""
+    try:
+        import litellm
+
+        return litellm.get_llm_provider(model)[1]
+    except Exception:  # noqa: BLE001 - unknown strings fall back to the prefix
+        return model.split("/", 1)[0] if "/" in model else "unknown"
+
+
+def is_local(model: str) -> bool:
+    return model.split("/", 1)[0] in LOCAL_PROVIDERS
+
+
+def _price_key(model: str) -> str:
+    bare = model.split("/", 1)[1] if model.split("/", 1)[0] in (
+        "anthropic", "groq", "gemini", "openai"
+    ) else model
+    return re.sub(r"-\d{8}$", "", bare)
+
+
+def _positive(value: Any) -> float | None:
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def price_for(model: str) -> Price | None:
+    """The price of a model, or None when it has none.
+
+    A price of 0 or a missing input/output price counts as **no price**: an
+    unpriced paid model must never read as free (D26). Explicit `PRICING`
+    rows win over LiteLLM's map. A map entry without cache prices is given
+    conservative ones (reads at the input price, writes at 1.25x).
+    """
+    if is_local(model):
+        return Price(0.0, 0.0, 0.0, 0.0, "local model: no charge")
+    row = PRICING.get(_price_key(model))
+    if row is not None:
+        return row
+    try:
+        from importlib.metadata import version
+
+        import litellm
+
+        info = litellm.get_model_info(model)
+        src = f"litellm {version('litellm')} cost map"
+    except Exception:  # noqa: BLE001 - not in the map
+        return None
+    p_in = _positive(info.get("input_cost_per_token"))
+    p_out = _positive(info.get("output_cost_per_token"))
+    if p_in is None or p_out is None:
+        return None
+    p_read = _positive(info.get("cache_read_input_token_cost")) or p_in
+    p_write = _positive(info.get("cache_creation_input_token_cost")) or p_in * 1.25
+    return Price(p_in, p_out, p_read, p_write, src)
+
+
+def cost_of(model: str, usage: Usage) -> float | None:
+    """USD for one call's usage, or None when the model has no price."""
+    p = price_for(model)
+    if p is None:
+        return None
+    return (
+        usage.input_tokens * p.input
+        + usage.output_tokens * p.output
+        + usage.cache_read_tokens * p.cache_read
+        + usage.cache_write_tokens * p.cache_write
+    )
+
+
+def price_of(
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    cache_read_tokens: int = 0,
+    cache_write_tokens: int = 0,
+) -> float | None:
+    """Cost in USD, or None when the model has no price (kept for callers of
+    the original API; `cost_of` is the same with a Usage)."""
+    return cost_of(model, Usage(input_tokens, output_tokens, cache_read_tokens, cache_write_tokens))
 
 
 @dataclass
@@ -642,7 +711,10 @@ class LLMClient:
 
         latency_ms = int((time.monotonic() - start) * 1000)
         reply = reply_from_response(response, model=model, latency_ms=latency_ms, cost_usd=None)
-        reply.cost_usd = self._cost(response, reply)
+        # Priced from the model that was asked for, by our own table first
+        # (D26); LiteLLM's completion_cost is not used, so 0 can never stand in
+        # for "unknown".
+        reply.cost_usd = cost_of(model, reply.usage)
         return reply
 
     #: LiteLLM's token count for a local model is a generic tokenizer and
@@ -676,19 +748,6 @@ class LLMClient:
                 f"context overflow: ~{int(estimate * self.LOCAL_COUNT_MARGIN)} prompt tokens "
                 f"+ {max_tokens} output > num_ctx {num_ctx}"
             )
-
-    @staticmethod
-    def _cost(response: Any, reply: Reply) -> float | None:
-        try:
-            cost = _litellm().completion_cost(completion_response=response)
-        except Exception:  # noqa: BLE001 - not in LiteLLM's map
-            cost = None
-        if cost:
-            return float(cost)
-        u = reply.usage
-        return price_of(
-            reply.model, u.input_tokens, u.output_tokens, u.cache_read_tokens, u.cache_write_tokens
-        )
 
     async def count_tokens(
         self,
