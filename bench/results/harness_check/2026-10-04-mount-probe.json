@@ -1,0 +1,25 @@
+{
+  "what": "Does the mounted checkout hide what the official SWE-bench image built in place, and can the image's own install step repair it after setup?",
+  "when": "2026-10-04",
+  "model_calls": 0,
+  "cost_usd": 0.0,
+  "instance_id": "pallets__flask-4992",
+  "image": "swebench/sweb.eval.x86_64.pallets_1776_flask-4992:latest",
+  "note": "The only official SWE-bench image present on the development machine. Run with BenchEnv.create(backend='docker', image=<official>, install=False), i.e. exactly how the study's arms see the container.",
+  "findings": {
+    "mount_hides_the_images_build": true,
+    "compiled_or_egg_info_after_mount": "",
+    "import_after_mount": {
+      "exit_code": 0,
+      "stdout": "/testbed/src/flask/__init__.py\n",
+      "reading": "harmless here: flask is pure Python and the image's path configuration points at the same /testbed path the checkout now occupies"
+    },
+    "install_after_mount": {
+      "exit_code": 1,
+      "stderr_tail": "Failed to establish a new connection: [Errno -3] Temporary failure in name resolution ... ERROR: No matching distribution found for setuptools ... pip subprocess to install build dependencies did not run successfully.",
+      "reading": "the container is already off the network by the time an arm runs, so the official eval script's own `python -m pip install -e .` cannot be used as a post-mount repair; any repair must happen during setup, while the network is still up"
+    }
+  },
+  "mounted_testbed_listing": ".editorconfig .flake8 .git .github .gitignore .pre-commit-config.yaml .readthedocs.yaml CHANGES.rst CODE_OF_CONDUCT.md CONTRIBUTING.rst LICENSE.rst MANIFEST.in README.rst artwork docs examples pyproject.toml requirements src tests tox.ini",
+  "conclusion": "The shadowing is real. It is fatal only for a repository whose import needs a compiled extension (astropy, scikit-learn, matplotlib), not for a pure-Python one (flask, sympy, sphinx, xarray, requests, pytest, seaborn, django)."
+}

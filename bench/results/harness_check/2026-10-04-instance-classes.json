@@ -1,0 +1,433 @@
+{
+ "what": "Static classification of the first 50 instances of seeded_order(0) by what could break grading, plus the depth at which 20 survivors are reached under each failure assumption.",
+ "when": "2026-10-04",
+ "model_calls": 0,
+ "cost_usd": 0.0,
+ "basis": "the frozen dataset's own rows (repo, log_parser, eval_script) plus the mount probe in 2026-10-04-mount-probe.json; NOT a harness run",
+ "classes": {
+  "compiled-extension": "the image builds C/Cython extensions in place, which the mount hides",
+  "django-runner": "pure Python, so not shadowed; graded through Django's own runner (TestSpec kind='django', parse_django), never yet run against an official image",
+  "pure-python-pytest": "the class the committed harness check already validated"
+ },
+ "counts": {
+  "first_20": {
+   "django-runner": 8,
+   "compiled-extension": 2,
+   "pure-python-pytest": 10
+  },
+  "first_50": {
+   "django-runner": 21,
+   "compiled-extension": 8,
+   "pure-python-pytest": 21
+  }
+ },
+ "per_instance": [
+  {
+   "position": 1,
+   "instance_id": "django__django-15814",
+   "repo": "django/django",
+   "log_parser": "parse_log_django",
+   "class": "django-runner"
+  },
+  {
+   "position": 2,
+   "instance_id": "django__django-13401",
+   "repo": "django/django",
+   "log_parser": "parse_log_django",
+   "class": "django-runner"
+  },
+  {
+   "position": 3,
+   "instance_id": "astropy__astropy-14995",
+   "repo": "astropy/astropy",
+   "log_parser": "parse_log_astropy",
+   "class": "compiled-extension"
+  },
+  {
+   "position": 4,
+   "instance_id": "django__django-12308",
+   "repo": "django/django",
+   "log_parser": "parse_log_django",
+   "class": "django-runner"
+  },
+  {
+   "position": 5,
+   "instance_id": "sphinx-doc__sphinx-7738",
+   "repo": "sphinx-doc/sphinx",
+   "log_parser": "parse_log_sphinx",
+   "class": "pure-python-pytest"
+  },
+  {
+   "position": 6,
+   "instance_id": "django__django-15996",
+   "repo": "django/django",
+   "log_parser": "parse_log_django",
+   "class": "django-runner"
+  },
+  {
+   "position": 7,
+   "instance_id": "sympy__sympy-21171",
+   "repo": "sympy/sympy",
+   "log_parser": "parse_log_sympy",
+   "class": "pure-python-pytest"
+  },
+  {
+   "position": 8,
+   "instance_id": "sympy__sympy-20154",
+   "repo": "sympy/sympy",
+   "log_parser": "parse_log_sympy",
+   "class": "pure-python-pytest"
+  },
+  {
+   "position": 9,
+   "instance_id": "django__django-13551",
+   "repo": "django/django",
+   "log_parser": "parse_log_django",
+   "class": "django-runner"
+  },
+  {
+   "position": 10,
+   "instance_id": "django__django-15252",
+   "repo": "django/django",
+   "log_parser": "parse_log_django",
+   "class": "django-runner"
+  },
+  {
+   "position": 11,
+   "instance_id": "django__django-15851",
+   "repo": "django/django",
+   "log_parser": "parse_log_django",
+   "class": "django-runner"
+  },
+  {
+   "position": 12,
+   "instance_id": "pallets__flask-5063",
+   "repo": "pallets/flask",
+   "log_parser": "parse_log_flask",
+   "class": "pure-python-pytest"
+  },
+  {
+   "position": 13,
+   "instance_id": "pytest-dev__pytest-7373",
+   "repo": "pytest-dev/pytest",
+   "log_parser": "parse_log_pytest",
+   "class": "pure-python-pytest"
+  },
+  {
+   "position": 14,
+   "instance_id": "sympy__sympy-23117",
+   "repo": "sympy/sympy",
+   "log_parser": "parse_log_sympy",
+   "class": "pure-python-pytest"
+  },
+  {
+   "position": 15,
+   "instance_id": "sympy__sympy-13895",
+   "repo": "sympy/sympy",
+   "log_parser": "parse_log_sympy",
+   "class": "pure-python-pytest"
+  },
+  {
+   "position": 16,
+   "instance_id": "pydata__xarray-4094",
+   "repo": "pydata/xarray",
+   "log_parser": "parse_log_xarray",
+   "class": "pure-python-pytest"
+  },
+  {
+   "position": 17,
+   "instance_id": "psf__requests-2148",
+   "repo": "psf/requests",
+   "log_parser": "parse_log_requests",
+   "class": "pure-python-pytest"
+  },
+  {
+   "position": 18,
+   "instance_id": "django__django-11133",
+   "repo": "django/django",
+   "log_parser": "parse_log_django",
+   "class": "django-runner"
+  },
+  {
+   "position": 19,
+   "instance_id": "scikit-learn__scikit-learn-11281",
+   "repo": "scikit-learn/scikit-learn",
+   "log_parser": "parse_log_scikit",
+   "class": "compiled-extension"
+  },
+  {
+   "position": 20,
+   "instance_id": "sphinx-doc__sphinx-8627",
+   "repo": "sphinx-doc/sphinx",
+   "log_parser": "parse_log_sphinx",
+   "class": "pure-python-pytest"
+  },
+  {
+   "position": 21,
+   "instance_id": "matplotlib__matplotlib-26020",
+   "repo": "matplotlib/matplotlib",
+   "log_parser": "parse_log_matplotlib",
+   "class": "compiled-extension"
+  },
+  {
+   "position": 22,
+   "instance_id": "django__django-14787",
+   "repo": "django/django",
+   "log_parser": "parse_log_django",
+   "class": "django-runner"
+  },
+  {
+   "position": 23,
+   "instance_id": "mwaskom__seaborn-2848",
+   "repo": "mwaskom/seaborn",
+   "log_parser": "parse_log_seaborn",
+   "class": "pure-python-pytest"
+  },
+  {
+   "position": 24,
+   "instance_id": "matplotlib__matplotlib-23563",
+   "repo": "matplotlib/matplotlib",
+   "log_parser": "parse_log_matplotlib",
+   "class": "compiled-extension"
+  },
+  {
+   "position": 25,
+   "instance_id": "django__django-16527",
+   "repo": "django/django",
+   "log_parser": "parse_log_django",
+   "class": "django-runner"
+  },
+  {
+   "position": 26,
+   "instance_id": "django__django-13028",
+   "repo": "django/django",
+   "log_parser": "parse_log_django",
+   "class": "django-runner"
+  },
+  {
+   "position": 27,
+   "instance_id": "django__django-14752",
+   "repo": "django/django",
+   "log_parser": "parse_log_django",
+   "class": "django-runner"
+  },
+  {
+   "position": 28,
+   "instance_id": "scikit-learn__scikit-learn-10297",
+   "repo": "scikit-learn/scikit-learn",
+   "log_parser": "parse_log_scikit",
+   "class": "compiled-extension"
+  },
+  {
+   "position": 29,
+   "instance_id": "django__django-16873",
+   "repo": "django/django",
+   "log_parser": "parse_log_django",
+   "class": "django-runner"
+  },
+  {
+   "position": 30,
+   "instance_id": "sympy__sympy-24909",
+   "repo": "sympy/sympy",
+   "log_parser": "parse_log_sympy",
+   "class": "pure-python-pytest"
+  },
+  {
+   "position": 31,
+   "instance_id": "sympy__sympy-23262",
+   "repo": "sympy/sympy",
+   "log_parser": "parse_log_sympy",
+   "class": "pure-python-pytest"
+  },
+  {
+   "position": 32,
+   "instance_id": "django__django-14730",
+   "repo": "django/django",
+   "log_parser": "parse_log_django",
+   "class": "django-runner"
+  },
+  {
+   "position": 33,
+   "instance_id": "django__django-13768",
+   "repo": "django/django",
+   "log_parser": "parse_log_django",
+   "class": "django-runner"
+  },
+  {
+   "position": 34,
+   "instance_id": "matplotlib__matplotlib-25332",
+   "repo": "matplotlib/matplotlib",
+   "log_parser": "parse_log_matplotlib",
+   "class": "compiled-extension"
+  },
+  {
+   "position": 35,
+   "instance_id": "pytest-dev__pytest-11143",
+   "repo": "pytest-dev/pytest",
+   "log_parser": "parse_log_pytest",
+   "class": "pure-python-pytest"
+  },
+  {
+   "position": 36,
+   "instance_id": "django__django-14017",
+   "repo": "django/django",
+   "log_parser": "parse_log_django",
+   "class": "django-runner"
+  },
+  {
+   "position": 37,
+   "instance_id": "sympy__sympy-20049",
+   "repo": "sympy/sympy",
+   "log_parser": "parse_log_sympy",
+   "class": "pure-python-pytest"
+  },
+  {
+   "position": 38,
+   "instance_id": "sympy__sympy-21614",
+   "repo": "sympy/sympy",
+   "log_parser": "parse_log_sympy",
+   "class": "pure-python-pytest"
+  },
+  {
+   "position": 39,
+   "instance_id": "sphinx-doc__sphinx-8474",
+   "repo": "sphinx-doc/sphinx",
+   "log_parser": "parse_log_sphinx",
+   "class": "pure-python-pytest"
+  },
+  {
+   "position": 40,
+   "instance_id": "sympy__sympy-23191",
+   "repo": "sympy/sympy",
+   "log_parser": "parse_log_sympy",
+   "class": "pure-python-pytest"
+  },
+  {
+   "position": 41,
+   "instance_id": "sympy__sympy-22714",
+   "repo": "sympy/sympy",
+   "log_parser": "parse_log_sympy",
+   "class": "pure-python-pytest"
+  },
+  {
+   "position": 42,
+   "instance_id": "astropy__astropy-14365",
+   "repo": "astropy/astropy",
+   "log_parser": "parse_log_astropy",
+   "class": "compiled-extension"
+  },
+  {
+   "position": 43,
+   "instance_id": "django__django-16400",
+   "repo": "django/django",
+   "log_parser": "parse_log_django",
+   "class": "django-runner"
+  },
+  {
+   "position": 44,
+   "instance_id": "matplotlib__matplotlib-24149",
+   "repo": "matplotlib/matplotlib",
+   "log_parser": "parse_log_matplotlib",
+   "class": "compiled-extension"
+  },
+  {
+   "position": 45,
+   "instance_id": "sympy__sympy-18835",
+   "repo": "sympy/sympy",
+   "log_parser": "parse_log_sympy",
+   "class": "pure-python-pytest"
+  },
+  {
+   "position": 46,
+   "instance_id": "django__django-15400",
+   "repo": "django/django",
+   "log_parser": "parse_log_django",
+   "class": "django-runner"
+  },
+  {
+   "position": 47,
+   "instance_id": "sphinx-doc__sphinx-11445",
+   "repo": "sphinx-doc/sphinx",
+   "log_parser": "parse_log_sphinx",
+   "class": "pure-python-pytest"
+  },
+  {
+   "position": 48,
+   "instance_id": "django__django-11999",
+   "repo": "django/django",
+   "log_parser": "parse_log_django",
+   "class": "django-runner"
+  },
+  {
+   "position": 49,
+   "instance_id": "django__django-12708",
+   "repo": "django/django",
+   "log_parser": "parse_log_django",
+   "class": "django-runner"
+  },
+  {
+   "position": 50,
+   "instance_id": "django__django-11179",
+   "repo": "django/django",
+   "log_parser": "parse_log_django",
+   "class": "django-runner"
+  }
+ ],
+ "twenty_survivors": {
+  "if_only_compiled_fail": {
+   "depth_in_seeded_order": 23,
+   "instance_ids": [
+    "django__django-15814",
+    "django__django-13401",
+    "django__django-12308",
+    "sphinx-doc__sphinx-7738",
+    "django__django-15996",
+    "sympy__sympy-21171",
+    "sympy__sympy-20154",
+    "django__django-13551",
+    "django__django-15252",
+    "django__django-15851",
+    "pallets__flask-5063",
+    "pytest-dev__pytest-7373",
+    "sympy__sympy-23117",
+    "sympy__sympy-13895",
+    "pydata__xarray-4094",
+    "psf__requests-2148",
+    "django__django-11133",
+    "sphinx-doc__sphinx-8627",
+    "django__django-14787",
+    "mwaskom__seaborn-2848"
+   ]
+  },
+  "if_compiled_and_django_fail": {
+   "depth_in_seeded_order": 45,
+   "instance_ids": [
+    "sphinx-doc__sphinx-7738",
+    "sympy__sympy-21171",
+    "sympy__sympy-20154",
+    "pallets__flask-5063",
+    "pytest-dev__pytest-7373",
+    "sympy__sympy-23117",
+    "sympy__sympy-13895",
+    "pydata__xarray-4094",
+    "psf__requests-2148",
+    "sphinx-doc__sphinx-8627",
+    "mwaskom__seaborn-2848",
+    "sympy__sympy-24909",
+    "sympy__sympy-23262",
+    "pytest-dev__pytest-11143",
+    "sympy__sympy-20049",
+    "sympy__sympy-21614",
+    "sphinx-doc__sphinx-8474",
+    "sympy__sympy-23191",
+    "sympy__sympy-22714",
+    "sympy__sympy-18835"
+   ]
+  }
+ },
+ "n_if_the_committed_sample_is_kept": {
+  "only_compiled_fail": 18,
+  "compiled_and_django_fail": 10
+ },
+ "not_measurable_here": "the gold/empty check over the first 40-50 needs one official image each, about 200 GB uncompressed against 176 GB free on this machine; the harness never pulls (D41)"
+}

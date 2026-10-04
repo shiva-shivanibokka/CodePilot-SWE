@@ -1315,3 +1315,127 @@ itself predicts the `/testbed` mount will break. Exclusions are free, but if
 all 10 drop, n is about 10 and the plan's own "a difference under ~25 points is
 not distinguishable" becomes about 35 points. The sampling is not changed
 without a decision, because its provenance is one of the study's strengths.
+
+## D46. The free half of the sampling question, measured
+
+The standing instruction is to do everything that costs nothing first and leave
+anything that spends credits for last. The sampling decision (C4 in D45) is the
+user's; what could be established without spending anything was established
+here. No model was called, nothing was paid for, and **the active sample and
+the runbook's instance list are unchanged**.
+
+**What was asked for and could not be done.** A gold/empty check over the first
+40–50 of `seeded_order(0)` needs one official SWE-bench image per instance.
+Those images are about 4 GB each uncompressed, so 50 of them is roughly 200 GB
+against **176 GB free** on this machine, and the harness refuses to pull (D41).
+Exactly one official image is present here (`pallets__flask-4992`, already in
+the committed check). So the larger draw was not run; saying so is better than
+reporting a check that did not happen.
+
+**What was measured instead.** The two mechanisms that could break grading were
+probed directly rather than predicted.
+
+1. **The mount does hide the image's build** —
+   `bench/results/harness_check/2026-10-04-mount-probe.json`. With the checkout
+   mounted over `/testbed` in the official flask image, `find` reports **no
+   `.so` and no `.egg-info`**: the layer the image built in place is gone. For
+   flask this is harmless, and measurably so — `import flask` exits 0 and
+   resolves to `/testbed/src/flask/__init__.py`, because the package is pure
+   Python and the image's path configuration names the same path the checkout
+   now occupies. It is fatal only where the import needs a compiled extension.
+2. **The repair cannot be made after setup.** The official eval script's own
+   `python -m pip install -e .` fails inside our container with
+   `Temporary failure in name resolution`: the network is already cut by the
+   time an arm runs (D10, by design). So the "fix the mount" option is
+   specifically *run the image's install during setup, while the network is
+   still up* — where `BenchEnv.create` currently skips it for official images
+   on the grounds that they are already installed. That is a real change with a
+   re-check attached, not a one-liner, and it is not made here.
+
+**Two grader bugs, found because the Django check failed first.** The first
+Django instance ever put through the gold/empty check (`django__django-15814`,
+local backend, Python 3.12 — free, no image to pull) **failed**: gold scored
+F2P 1/1 but **P2P 17/29**, while Django itself printed "Ran 30 tests ... OK"
+and exited 0. Both causes were reproduced with a unit test before either was
+touched.
+
+1. **A Django test with a docstring is identified by its docstring.** Verbose
+   unittest prints the docstring's first line in place of a description, and
+   that line is the id SWE-bench's own parser records — so 12 of
+   django-15814's 30 required ids are sentences like "Proxy objects can be
+   deleted", and `parse_django` only ever keyed on `test_x (module.Class)`.
+   Every such test counted as not-passed, and since resolution requires every
+   PASS_TO_PASS test to pass, **no Django instance could ever resolve**. Across
+   the Django instances in the first 50, **136 required ids** are docstrings,
+   and 16 of the 21 instances have at least one. `parse_django` now records
+   both forms. `tests/test_bench_testlog.py::test_a_django_test_with_a_docstring_is_recorded_under_the_id_swebench_uses`.
+   The existing exact-equality test for that parser was updated, since the
+   docstring key is new and correct.
+2. **Only the first module a required test named was ever run.** The label
+   list was built from the test patch and then extended from the ids *only if
+   it was still empty*, so for the five Django instances of the first 50 whose
+   required tests span two modules, the second module's tests never ran and
+   could not pass. Every named module is now run.
+   `tests/test_suite_grading.py::test_every_django_module_named_by_a_required_test_is_run`.
+
+After the fix the same check passes: gold resolved with **F2P 1/1, P2P 29/29**,
+empty unresolved with F2P 0/1 and P2P 29/29 —
+`bench/results/harness_check/2026-10-04-django-local-py312.jsonl`. Had this not
+been found, the funded study would have scored 8 of its 20 instances
+unresolvable for both arms, at full price.
+
+**One consequence for the provenance guard.** Committing that row puts a
+sampled instance id into `bench/results/`, which the D45 guard forbade. The
+guard was too strict for the plan's own procedure — step 2 of the runbook runs
+the gold/empty check on all 20 — so it now excludes `harness_check/` and
+checks what the claim actually needs: that no committed result **measures
+either arm** on a sampled instance. A model-free gold/empty check says nothing
+about agent versus agentless. The plan states the exception in the same place
+it makes the claim.
+
+**So the plan's own prediction was wrong, and in the study's favour.** It said
+10 of the 20 sampled instances were at risk. Django is pure Python — nothing of
+its install is compiled, and the grader already drives Django's own test runner
+and parses its output (`TestSpec(kind="django")`, `parse_django`), so the mount
+does not touch it. The at-risk class is compiled extensions only, which in the
+committed sample is **two** instances: `astropy__astropy-14995` and
+`scikit-learn__scikit-learn-11281`. Django carried a different risk —
+its own test runner — which was not assumed but checked, and which turned out
+to be real; see below. It is now its own caveat rather than folded into the
+mount's.
+
+Classification of the first 50, per instance, with its log parser and the
+reasoning: `bench/results/harness_check/2026-10-04-instance-classes.json`.
+
+| class | first 20 | first 50 |
+|---|---:|---:|
+| pure Python + pytest (validated class) | 10 | 21 |
+| Django's own runner | 8 | 21 |
+| compiled extension, shadowed by the mount | 2 | 8 |
+
+**n under each option, so the choice is between numbers:** keeping the
+committed 20 gives **n = 18** if the compiled repos fail, or **n = 10** in the
+pessimistic case where Django's runner fails too. The candidate rule — *"the
+first 20 instances of `seeded_order(0)` that pass the gold/empty check"* —
+gives **n = 20** either way, reached at depth **23** if only the compiled repos
+fail and depth **45** if Django fails as well. Fixing the setup install keeps
+the committed 20 at n = 20.
+
+The rule is written into STUDY_PLAN as a **proposal, marked not adopted**, with
+the price of adopting it stated: survivorship bias. Dropping the repositories
+whose environments are hardest to build makes the **absolute** resolve rates
+optimistic; it does not bias the arm comparison, because both arms get the same
+instances.
+
+**Also in this entry.**
+
+* The runbook's bill-against-ledger reconciliation is now **numbered step 5**,
+  with the command to print the ledger's total, rather than prose at the end of
+  a caveat. It is the only mitigation for the double-billing gap (D45 S3), so
+  it belongs in the procedure.
+* The evidence that justifies D45's three-layer refusal of a non-finite cap is
+  not that `nan` compares False — it is that the first version of that test,
+  written without `--dry-run`, **started a real run**: it was cloning flask
+  when it was stopped, and its `config` row recorded
+  `"max_total_usd": NaN`. The gate was the only thing between a malformed
+  number and a paid run, and it was open.

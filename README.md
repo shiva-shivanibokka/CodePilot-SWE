@@ -316,7 +316,7 @@ times that if instances are harder and a stronger model works longer than the
 ## Development
 
 ```bash
-pytest -q          # 412 passed, 1 skipped (the opt-in Docker test); no key, no network
+pytest -q          # 414 passed, 1 skipped (the opt-in Docker test); no key, no network
 ruff check .
 python -m codepilot.doctor
 ```

@@ -112,16 +112,23 @@ def test_new_result_rows_have_the_home_directory_redacted():
     assert Path.home().name not in clean and "<HOME>" in clean
 
 
-def test_no_sampled_instance_appears_in_a_committed_result():
-    """C5/D45: the funded study's sample provably predates any result on it, so
-    it cannot have been chosen to flatter one. Guard that it stays true."""
+def test_no_sampled_instance_appears_in_a_committed_arm_result():
+    """C5/D45: the funded study's sample provably predates any measurement of
+    the arms on it, so it cannot have been chosen to flatter one.
+
+    `harness_check/` is excluded on purpose (D46): a gold/empty check calls no
+    model and says nothing about either arm — it checks the environment and the
+    grader — and the study's own first step runs exactly that check on all 20
+    instances, so treating it as a result would forbid the plan's own procedure.
+    """
     import pathlib
 
     from codepilot.bench.instances import sample
 
     ids = {r["instance_id"] for r in sample(20, 0)}
     results = pathlib.Path(__file__).resolve().parents[1] / "bench" / "results"
-    committed = [p for p in results.rglob("*") if p.is_file()]
+    committed = [p for p in results.rglob("*")
+                 if p.is_file() and "harness_check" not in p.parts]
     assert committed
     for p in committed:
         text = p.read_text(encoding="utf-8", errors="replace")
