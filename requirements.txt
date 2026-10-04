@@ -1,5 +1,5 @@
 # Core. LiteLLM is the provider seam (Anthropic, OpenAI, Gemini, Groq, ...).
-litellm>=1.60.0
+litellm==1.103.2  # pinned: prices and request shapes are version-specific (D25)
 langgraph>=0.2.0
 langchain-core>=0.3.0
 pydantic>=2.7.0

@@ -640,3 +640,28 @@ first: the request went to `ollama/qwen2.5:7b`).
 **Fix.** `LLMClient` sends any `ollama/<model>` request as
 `ollama_chat/<model>` — same server, same model, same options. The smoke run
 was repeated after the fix; both runs are committed.
+
+---
+
+# Fix phase (after the adversarial review)
+
+An independent review judged the merge PASS-WITH-FIXES and a paid run FAIL.
+The entries below (D25+) address its findings. No paid or LLM call was made
+during this phase.
+
+## D25. LiteLLM pinned, and its prices taken from the bundled map
+
+**What.** `requirements.txt` pins `litellm==1.103.2` (was `>=1.60.0`).
+`codepilot/__init__.py` sets `LITELLM_LOCAL_MODEL_COST_MAP=True` unless already
+set; `tests/conftest.py` imports codepilot first so the test session uses it.
+
+**Why, verified in the installed library.** `litellm/__init__.py:556` builds
+`model_cost` from `get_model_cost_map(url=model_cost_map_url)`, which downloads
+the map from GitHub unless the variable is `true`
+(`litellm_core_utils/get_model_cost_map.py`). The prices a run was charged at
+would then depend on the day it ran, and the request translation this code
+relies on (D2's usage arithmetic, D24's routes, D30's thinking blocks) is
+version-specific.
+
+**Reproduced first.** `tests/test_pricing.py::test_importing_codepilot_pins_litellm_to_its_bundled_cost_map`
+failed (`None`), then passed.
