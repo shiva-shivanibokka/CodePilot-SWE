@@ -65,4 +65,38 @@ def test_django_outcomes_including_docstrings_and_new_style_ids():
         "test_docs (admin_views.tests.AdminViewTests)": "ERROR",
         "test_old (admin_views.tests.AdminViewTests)": "SKIPPED",
         "test_known (admin_views.tests.AdminViewTests)": "XFAIL",
+        # The docstring is also an id, because it is the one SWE-bench's own
+        # parser records for a test that has one (D46).
+        "Docstring first line.": "ERROR",
     }
+
+
+DJANGO_VERBOSE_LOG = """\
+test_new_fields (proxy_models.tests.ProxyModelTests.test_new_fields) ... ok
+test_proxy_delete (proxy_models.tests.ProxyModelTests.test_proxy_delete)
+Proxy objects can be deleted ... ok
+test_same_manager_queries (proxy_models.tests.ProxyModelTests.test_same_manager_queries)
+The MyPerson model should be generating the same database queries as ... ok
+test_swappable (proxy_models.tests.ProxyModelTests.test_swappable) ... FAIL
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.637s
+"""
+
+
+def test_a_django_test_with_a_docstring_is_recorded_under_the_id_swebench_uses():
+    """D46: SWE-bench keys Django tests on the description unittest prints,
+    which is the docstring's first line when there is one — so 12 of the 30
+    required ids of django-15814 are docstrings, and the real gold run scored
+    P2P 17/29 although Django itself printed "Ran 30 tests ... OK"."""
+    from codepilot.bench.testlog import parse_django
+
+    s = parse_django(DJANGO_VERBOSE_LOG)
+    # The docstring form, which the dataset uses:
+    assert s["Proxy objects can be deleted"] == "PASSED"
+    assert s["The MyPerson model should be generating the same database queries as"] == "PASSED"
+    # The name form, still recorded, for the tests that have no docstring:
+    assert s["test_new_fields (proxy_models.tests.ProxyModelTests)"] == "PASSED"
+    assert s["test_swappable (proxy_models.tests.ProxyModelTests)"] == "FAILED"
+    # A test with a docstring is reachable by either id.
+    assert s["test_proxy_delete (proxy_models.tests.ProxyModelTests)"] == "PASSED"

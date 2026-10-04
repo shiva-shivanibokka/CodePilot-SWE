@@ -183,8 +183,11 @@ def build_test_spec(instance: dict) -> TestSpec:
             if p.parts and p.parts[0] == "tests":
                 labels.append(".".join(p.with_suffix("").parts[1:]))
         for test_id in ids:
+            # Every module a required test names, not just the first: five of
+            # the Django instances in the study's first 50 have required tests
+            # in two modules, and the second module never ran (D46).
             m = re.match(r"^\w+ \(([\w.]+)\)$", test_id)
-            if m and not labels:
+            if m:
                 labels.append(m.group(1).rsplit(".", 1)[0])
         labels = list(dict.fromkeys(labels))
         command = (

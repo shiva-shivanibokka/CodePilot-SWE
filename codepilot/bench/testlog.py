@@ -67,22 +67,32 @@ def parse_pytest(log: str) -> dict[str, str]:
 
 
 def parse_django(log: str) -> dict[str, str]:
-    """'test_x (module.Class)' -> status.
+    """'test_x (module.Class)' -> status, and the docstring form beside it.
 
     Python 3.11+ unittest prints the description as `(module.Class.test_x)`;
     the trailing method name is stripped so ids match SWE-bench's.
+
+    A test with a docstring prints the docstring's first line in place of a
+    description, and **that line is the id SWE-bench's own parser records**
+    (D46) — 136 of the required ids of the Django instances in the study's
+    first 50 are docstrings. Such a test is recorded under both forms: the
+    docstring, so the dataset's id matches, and `name (where)`, so a caller
+    holding the name form still finds it.
     """
     statuses: dict[str, str] = {}
     pending: tuple[str, str] | None = None
     for raw in log.splitlines():
         line = _ANSI.sub("", raw).rstrip()
         m = _DJANGO.match(line)
+        described = None
         if m:
             pending = (m.group("name"), m.group("where"))
             rest = m.group("rest")
         elif pending is not None:
-            # A test with a docstring prints it on the next line, before " ... ok".
+            # A test with a docstring prints it on the next line, before
+            # " ... ok", and that docstring is the id the dataset uses.
             rest = line
+            described = _DJANGO_RESULT.sub("", line).strip()
         else:
             continue
         result = _DJANGO_RESULT.search(rest)
@@ -98,6 +108,8 @@ def parse_django(log: str) -> dict[str, str]:
             status = SKIPPED
         if status is not None:
             statuses[f"{name} ({where})"] = status
+            if described:
+                statuses[described] = status
     return statuses
 
 

@@ -69,3 +69,23 @@ async def test_a_real_fix_still_passes(monkeypatch):
     (task,) = by_ids(["empty-guard"])
     result = await runner.run_one(task, "loop", model="scripted", effort=None, config_name="t")
     assert result.passed, result.held_out_summary
+
+
+def test_every_django_module_named_by_a_required_test_is_run():
+    """D46: the label list stopped at the first id-derived module, so for the
+    5 Django instances of the first 50 whose required tests span two modules
+    the second module's tests never ran and could never pass."""
+    from codepilot.bench.swebench import build_test_spec
+
+    instance = {
+        "repo": "django/django",
+        "FAIL_TO_PASS": ["test_a (auth_tests.test_tokens.TokenTest)"],
+        "PASS_TO_PASS": ["test_b (auth_tests.test_models.UserTest)"],
+        "test_patch": (
+            "diff --git a/tests/auth_tests/test_tokens.py b/tests/auth_tests/test_tokens.py\n"
+            "--- a/tests/auth_tests/test_tokens.py\n+++ b/tests/auth_tests/test_tokens.py\n"
+        ),
+    }
+    spec = build_test_spec(instance)
+    assert "auth_tests.test_tokens" in spec.targets
+    assert "auth_tests.test_models" in spec.targets, spec.command
