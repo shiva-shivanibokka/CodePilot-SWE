@@ -1065,3 +1065,65 @@ worst case total     $16.09
 ```
 
 D39's $14.64 is superseded.
+
+## D41. Round-3 spend controls: one process, atomic reservation, a user-level ledger, a hard maximum
+
+Holes found in another project's third review round, checked against this
+code and closed. Tests: `tests/test_spend_controls.py`.
+
+1. **Atomic check-and-reserve.** D28 checked the cap from in-memory totals and
+   D38 then appended a pending row — two steps, so two writers could both see
+   room for one more call. The ledger is now SQLite: `Ledger.reserve` reads
+   the total, checks the cap and inserts the pending row inside one
+   `BEGIN IMMEDIATE` transaction; settlement is an `UPDATE`.
+   `test_two_clients_cannot_both_reserve_the_last_of_the_cap`: two clients,
+   one ledger, a cap with room for 1.5 worst cases, called concurrently —
+   exactly one is refused and exactly one request is sent. (Under D28/D38
+   each client checked only its own memory plus the ledger as it was at
+   construction, so both would have gone.)
+2. **User-level ledger.** `%LOCALAPPDATA%\sop_eval\codepilot_swe\ledger.sqlite`
+   (`~/.local/share/...` elsewhere), outside the repository: another checkout
+   or output directory cannot reset spend. No environment override; tests
+   redirect `codepilot.llm.LEDGER_DIR` with an autouse fixture
+   (`tests/conftest.py`). Supersedes D38's in-repo `bench/spend-ledger.jsonl`.
+3. **Process lock.** `codepilot/bench/runlock.py`: an `O_EXCL` lock file beside
+   the ledger, held for the life of any paid run, released in a `finally`
+   (normal exit, exception, Ctrl-C). A second paid run is refused with the
+   holder's PID. `--break-stale-lock` removes a lock only if its PID is not
+   running — checked with `tasklist` on Windows (where `os.kill` would
+   terminate the process) and `os.kill(pid, 0)` on POSIX; nothing is ever
+   killed. Tests: `test_a_second_paid_run_is_refused_and_a_stale_lock_can_be_recovered`,
+   `test_the_lock_is_released_on_ctrl_c`, `test_a_running_pid_is_seen_as_running`.
+4. **Hard maximum.** `bench.run.PROJECT_MAX_USD = 20.0`, the planned cap
+   (STUDY_PLAN.md; this repository's share of the $50 total is $25, kept 20%
+   under). A paid run must give `--max-total-usd` and cannot give more.
+   `test_paid_runs_need_a_cap_no_higher_than_the_project_maximum`.
+5. **Transport errors, checked in the installed code.** LiteLLM 1.103.2 sends
+   requests with `httpx` (0.28.1): it converts `httpx.TimeoutException` to
+   `litellm.Timeout` (status 408), and on `RemoteProtocolError`/`ConnectError`
+   **retries once itself on a fresh connection** and lets a second failure
+   through raw (`llms/custom_httpx/http_handler.py:817-845`). `httpx2`
+   (2.13.1, used by the Anthropic SDK 1.x) is also installed. Now any
+   `httpx`/`httpx2` `TransportError`, `litellm.Timeout` and
+   `litellm.APIConnectionError` is retried once (D30's limit) with every
+   attempt charged at its worst case, and 408/429 are never treated as clean
+   4xx rejections — the first version of this change scored `litellm.Timeout`
+   (408) as a run-ending 4xx, caught by the parametrised test.
+   **Known gap:** LiteLLM's own reconnect-retry happens inside one of our
+   requests; if the first attempt was billed and the retry succeeds, the
+   ledger records one call. At most one extra call per occurrence, absorbed by
+   the 20% margin; not closable without patching LiteLLM.
+6. **Model recorded and checked.** Every settled row records the model the
+   API reported (`reported_model`). A reply from a different model (after
+   removing provider prefix and date suffix) is settled and then aborts the
+   run (`ModelMismatch`). Tests: `test_an_answer_from_another_model_is_recorded_and_aborts_the_run`,
+   `test_a_dated_answer_to_an_alias_is_not_a_mismatch`.
+7. **No unledgered client.** `LLMClient` without a ledger now uses the
+   user-level one, so the CLI, the web UI, `solve.py` and the harness's own
+   fallback client are all ledgered. `test_a_client_built_without_a_ledger_still_has_one`
+   and a grep test that nothing in the package passes `ledger=None`.
+
+Also: the Docker backend no longer starts from an image that is not already
+present (`containers.run` would pull it silently, several GB); the operator
+pulls with `docker pull`, which shows the size.
+`test_a_missing_docker_image_is_never_pulled_silently`.

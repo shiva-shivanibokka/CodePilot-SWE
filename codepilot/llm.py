@@ -326,59 +326,155 @@ class ProviderRejected(AbortRun):
     """
 
 
+class ModelMismatch(AbortRun):
+    """The provider answered with a different model than the one requested."""
+
+
 class SpendCapReached(AbortRun):
     """The next call could take total spend past `max_total_usd`."""
 
 
-class Ledger:
-    """Append-only record of every model request (D27, D38).
+def _ledger_home() -> Path:
+    """The user-level directory every CodePilot-SWE checkout shares (D41).
 
-    Each request is written **before** it is sent, as `status: "pending"` at
-    its worst-case cost, then settled by a second row (`status: "settled"`,
-    same `call_id`) carrying the real cost once a response has been parsed. A
-    request that ends any other way — a timeout or protocol error mid-body, an
-    error event inside a status-200 stream, an interrupt, a kill — is never
-    settled and stays charged at its worst case. A provider's clean 4xx
-    rejection is settled at $0. Rows are only ever appended (flushed and
-    fsync'd); totals are computed from them.
+    Outside the repository on purpose: running from another checkout or
+    another output directory must not start a fresh ledger. There is no
+    environment-variable override; tests monkeypatch `LEDGER_DIR`.
+    """
+    base = os.environ.get("LOCALAPPDATA") or str(Path.home() / ".local" / "share")
+    return Path(base) / "sop_eval" / "codepilot_swe"
+
+
+LEDGER_DIR = _ledger_home()
+
+_LEDGER_SCHEMA = """
+CREATE TABLE IF NOT EXISTS calls (
+    call_id TEXT PRIMARY KEY,
+    at REAL, tag TEXT, model TEXT, reported_model TEXT,
+    status TEXT,             -- pending | settled | cached
+    cost_usd REAL,           -- what counts: worst case while pending, real once settled
+    worst_usd REAL,
+    input_tokens INTEGER, output_tokens INTEGER,
+    cache_read_tokens INTEGER, cache_write_tokens INTEGER,
+    latency_ms INTEGER, stop_reason TEXT, omitted_params TEXT,
+    error TEXT
+)
+"""
+
+
+class Ledger:
+    """Every model request, in one SQLite file (D27, D38, D41).
+
+    * A request is **reserved** before it is sent: in one `BEGIN IMMEDIATE`
+      transaction the ledger's total is read, the cap is checked against it
+      plus the request's worst case, and a `pending` row charged at that worst
+      case is inserted. Check and reserve cannot be separated by another
+      writer, so concurrent clients cannot overshoot the cap together.
+    * It is **settled** (`UPDATE` to the real cost) only when a response is
+      parsed, or at $0 when the provider cleanly rejected it (a 4xx). Any
+      other end — a timeout or protocol error mid-body, an error event inside
+      a status-200 stream, an interrupt, a kill — leaves it charged at its
+      worst case.
     """
 
     def __init__(self, path: Path | str) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as db:
+            db.execute(_LEDGER_SCHEMA)
+
+    @classmethod
+    def default(cls) -> Ledger:
+        return cls(LEDGER_DIR / "ledger.sqlite")
+
+    def _connect(self):
+        import sqlite3
+
+        db = sqlite3.connect(self.path, timeout=30, isolation_level=None)
+        db.row_factory = sqlite3.Row
+        return _Closing(db)
+
+    @staticmethod
+    def _total(db, tag_prefix: str = "") -> float:
+        row = db.execute(
+            "SELECT COALESCE(SUM(cost_usd), 0) FROM calls WHERE tag LIKE ? ESCAPE '\\'",
+            (tag_prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%",),
+        ).fetchone()
+        return float(row[0])
+
+    def reserve(self, call_id: str, *, tag: str, model: str, worst: float | None,
+                cap: float | None) -> None:
+        """Atomically check the cap and insert a pending row at `worst`."""
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                if cap is not None:
+                    if worst is None:
+                        raise SpendCapReached(f"{model} has no price, so a spend cap cannot be enforced")
+                    spent = self._total(db)
+                    if spent + worst > cap:
+                        raise SpendCapReached(
+                            f"spend cap: ${spent:.4f} spent + up to ${worst:.4f} for the next "
+                            f"call > ${cap:.2f}"
+                        )
+                db.execute(
+                    "INSERT INTO calls (call_id, at, tag, model, status, cost_usd, worst_usd) "
+                    "VALUES (?, ?, ?, ?, 'pending', ?, ?)",
+                    (call_id, time.time(), tag, model, worst or 0.0, worst),
+                )
+                db.execute("COMMIT")
+            except BaseException:
+                db.execute("ROLLBACK")
+                raise
+
+    def settle(self, call_id: str, cost: float | None, **fields: Any) -> None:
+        cols = {k: (json.dumps(v) if isinstance(v, list | dict) else v) for k, v in fields.items()}
+        cols["status"], cols["cost_usd"] = "settled", cost or 0.0
+        sets = ", ".join(f"{k} = ?" for k in cols)
+        with self._connect() as db:
+            db.execute(f"UPDATE calls SET {sets} WHERE call_id = ?", (*cols.values(), call_id))  # noqa: S608
+
+    def note_error(self, call_id: str, error: str) -> None:
+        """Record why a request ended, leaving its worst-case charge in place."""
+        with self._connect() as db:
+            db.execute("UPDATE calls SET error = ? WHERE call_id = ?", (error, call_id))
 
     def append(self, row: dict[str, Any]) -> None:
-        line = json.dumps(row, default=str)
-        with self.path.open("a", encoding="utf-8") as fh:
-            fh.write(line + "\n")
-            fh.flush()
-            os.fsync(fh.fileno())
+        """Insert a finished row: a cached reply ($0), or spend recorded elsewhere."""
+        fields = {k: row.get(k) for k in ("tag", "model", "reported_model", "cost_usd",
+                                          "input_tokens", "output_tokens", "cache_read_tokens",
+                                          "cache_write_tokens", "stop_reason", "error")}
+        with self._connect() as db:
+            db.execute(
+                "INSERT INTO calls (call_id, at, status, tag, model, reported_model, cost_usd, "
+                "input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, stop_reason, error) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (row.get("call_id") or uuid.uuid4().hex, row.get("at") or time.time(),
+                 row.get("status", "settled"), fields["tag"] or "", fields["model"],
+                 fields["reported_model"], float(fields["cost_usd"] or 0.0), fields["input_tokens"],
+                 fields["output_tokens"], fields["cache_read_tokens"], fields["cache_write_tokens"],
+                 fields["stop_reason"], fields["error"]),
+            )
 
     def rows(self) -> list[dict[str, Any]]:
-        if not self.path.is_file():
-            return []
-        return [json.loads(x) for x in self.path.read_text(encoding="utf-8").splitlines() if x.strip()]
+        with self._connect() as db:
+            return [dict(r) for r in db.execute("SELECT * FROM calls ORDER BY at, rowid")]
 
     def total_usd(self, tag_prefix: str = "") -> float:
-        """Settled costs, plus the worst case of every request never settled."""
-        pending: dict[str, float] = {}
-        settled: dict[str, float] = {}
-        loose = 0.0
-        for r in self.rows():
-            if not str(r.get("tag", "")).startswith(tag_prefix):
-                continue
-            cost = float(r.get("cost_usd") or 0.0)
-            call = r.get("call_id")
-            status = r.get("status")
-            if call is None:
-                loose += cost
-            elif status == "pending":
-                pending[call] = cost
-            elif status == "settled":
-                settled[call] = cost
-        return loose + sum(settled.get(c, cost) for c, cost in pending.items()) + sum(
-            cost for c, cost in settled.items() if c not in pending
-        )
+        """Settled costs plus the worst case of every request never settled."""
+        with self._connect() as db:
+            return self._total(db, tag_prefix)
+
+
+class _Closing:
+    def __init__(self, db) -> None:
+        self.db = db
+
+    def __enter__(self):
+        return self.db
+
+    def __exit__(self, *exc) -> None:
+        self.db.close()
 
 
 @dataclass
@@ -697,7 +793,45 @@ def _status_200_error(exc: BaseException) -> bool:
     return "overloaded_error" in text or '"api_error"' in text or "'api_error'" in text
 
 
+def _transport_error(exc: BaseException) -> bool:
+    """A transport failure from either HTTP stack that can reach us (D41).
+
+    LiteLLM 1.103.2 uses `httpx`: it maps `httpx.TimeoutException` to
+    `litellm.Timeout`, retries `RemoteProtocolError`/`ConnectError` once
+    itself on a new connection, and lets a second one through raw. `httpx2`
+    (what the Anthropic SDK 1.x uses) is installed alongside and is checked
+    too, in case a route surfaces its errors.
+    """
+    types: list[type] = []
+    for module in ("httpx", "httpx2"):
+        try:
+            types.append(__import__(module).TransportError)
+        except (ImportError, AttributeError):
+            continue
+    return isinstance(exc, tuple(types)) if types else False
+
+
+def _bare_model(model: str) -> str:
+    """A model id without provider prefix or date suffix, for comparison."""
+    head, _, rest = model.partition("/")
+    if rest and head in ("anthropic", "groq", "gemini", "openai", "ollama", "ollama_chat"):
+        model = rest
+    return re.sub(r"-\d{8}$", "", model)
+
+
+def _clean_rejection(exc: BaseException) -> bool:
+    """A 4xx the provider answered before doing any work: not billed, not
+    retried, and (D29) the end of the run. 408 (request timeout) and 429
+    (rate limit) are excluded: both are transient, and a 408 can arrive after
+    the model started work."""
+    status = _status_of(exc)
+    return (status is not None and 400 <= status < 500 and status not in (408, 429)
+            and not _status_200_error(exc) and not _transport_error(exc))
+
+
 def _retryable(exc: Exception) -> bool:
+    if _transport_error(exc):
+        return True
     name = type(exc).__name__
     return name in {
         "RateLimitError",
@@ -762,9 +896,10 @@ class LLMClient:
         #: and compaction included, plus whatever the ledger already holds
         #: from earlier runs. Checked before every request (D28).
         self.max_total_usd = max_total_usd
-        self._prior_usd = ledger.total_usd() if ledger is not None else 0.0
-        #: Every call is appended here as it happens, if set (D27).
-        self.ledger = ledger
+        #: Every request is reserved, then settled, here (D27, D38, D41). There
+        #: is no unledgered client: without an explicit ledger, the user-level
+        #: one every checkout shares is used.
+        self.ledger = ledger if ledger is not None else Ledger.default()
         #: Label written with each call and used to total spend per arm. The
         #: benchmark sets it to "<instance>:<arm>" before each arm.
         self.tag = ""
@@ -924,8 +1059,8 @@ class LLMClient:
 
         attempt = 0
         while True:
-            self._check_spend_cap(model, params, max_tokens)
             call_id = uuid.uuid4().hex
+            # Cap check and reservation in one transaction (D41).
             self._open(call_id, model, self.worst_case_usd(model, params, max_tokens))
             start = time.monotonic()
             try:
@@ -954,7 +1089,7 @@ class LLMClient:
                 raise ProviderRejected(f"This key may not use {model!r}.") from exc
             except Exception as exc:
                 status = _status_of(exc)
-                if status is not None and 400 <= status < 500 and status != 429:
+                if _clean_rejection(exc):
                     raise ProviderRejected(
                         f"{model!r} rejected the request ({status}): {_first_line(exc)}"
                     ) from exc
@@ -973,6 +1108,10 @@ class LLMClient:
         reply.cost_usd = cost_of(model, reply.usage)
         reply.omitted_params = list(getattr(self, "_omitted", []))
         self._record(model, reply=reply, call_id=call_id)
+        if reply.model and _bare_model(reply.model) != _bare_model(model):
+            # Recorded (and settled) above under the model that answered; the
+            # run cannot continue on a model it did not ask for (D41).
+            raise ModelMismatch(f"asked for {model!r}, the provider answered as {reply.model!r}")
         self._cache_put(key, reply)
         return reply
 
@@ -1032,13 +1171,15 @@ class LLMClient:
         tmp.replace(path)
 
     def _open(self, call_id: str, model: str, worst: float | None) -> None:
-        """Charge a request at its worst case before it is sent (D38)."""
+        """Reserve a request at its worst case before it is sent (D38, D41).
+
+        Raises SpendCapReached, inside the same transaction that would have
+        reserved it, if the cap does not allow it.
+        """
+        self.ledger.reserve(call_id, tag=self.tag, model=model, worst=worst, cap=self.max_total_usd)
         spend = self._spend.setdefault(self.tag, TagSpend())
         self._unsettled[call_id] = (self.tag, worst or 0.0)
         spend.unsettled_usd += worst or 0.0
-        if self.ledger is not None:
-            self.ledger.append({"at": time.time(), "call_id": call_id, "status": "pending",
-                                "tag": self.tag, "model": model, "cost_usd": worst})
 
     def _settle(self, call_id: str | None) -> None:
         if call_id is None or call_id not in self._unsettled:
@@ -1050,48 +1191,39 @@ class LLMClient:
                 cached: bool = False, call_id: str | None = None) -> None:
         """Account for one request's outcome, in memory and in the ledger."""
         spend = self._spend.setdefault(self.tag, TagSpend())
-        row: dict[str, Any] = {
-            "at": time.time(), "tag": self.tag, "model": model, "cached": cached,
-        }
-        if call_id is not None:
-            row["call_id"] = call_id
         if reply is not None:
-            if call_id is not None:
-                row["status"] = "settled"
-                self._settle(call_id)
             spend.usage = spend.usage + reply.usage
             spend.calls += 1
             if reply.cost_usd is None:
                 spend.unpriced_calls += 1
             else:
                 spend.cost_usd += reply.cost_usd
-            row.update(
+            fields = dict(
+                reported_model=reply.model,
                 input_tokens=reply.usage.input_tokens,
                 output_tokens=reply.usage.output_tokens,
                 cache_read_tokens=reply.usage.cache_read_tokens,
                 cache_write_tokens=reply.usage.cache_write_tokens,
-                cost_usd=reply.cost_usd,
-                latency_ms=reply.latency_ms,
                 stop_reason=reply.stop_reason,
-                omitted_params=reply.omitted_params,
             )
-        if error is not None:
-            status = _status_of(error)
-            clean_rejection = (
-                status is not None and 400 <= status < 500 and not _status_200_error(error)
-            )
-            row["error"] = f"{type(error).__name__}: {_first_line(error)}"
-            if clean_rejection:
+            if cached:
+                self.ledger.append({"status": "cached", "tag": self.tag, "model": model,
+                                    "cost_usd": 0.0, **fields})
+            elif call_id is not None:
+                self.ledger.settle(call_id, reply.cost_usd, latency_ms=reply.latency_ms,
+                                   omitted_params=reply.omitted_params, **fields)
+                self._settle(call_id)
+        if error is not None and call_id is not None:
+            message = f"{type(error).__name__}: {_first_line(error)}"
+            if _clean_rejection(error):
                 # The provider refused the request before doing any work: not
                 # billed. Settled at $0.
-                row.update(status="settled", cost_usd=0.0)
+                self.ledger.settle(call_id, 0.0, error=message)
                 self._settle(call_id)
             else:
                 # Ended mid-flight, or in a way that may still be billed: the
                 # pending row keeps its worst-case charge (D38).
-                row["status"] = "unsettled"
-        if self.ledger is not None:
-            self.ledger.append(row)
+                self.ledger.note_error(call_id, message)
 
     #: Applied to LiteLLM's prompt-token estimate in the spend cap's worst
     #: case. LiteLLM counts with a generic tokenizer; for qwen2.5:7b it
@@ -1100,9 +1232,8 @@ class LLMClient:
     HOSTED_COUNT_MARGIN = 1.5
 
     def total_spent_usd(self) -> float:
-        """Everything spent: this client's calls plus the ledger's history."""
-        total = self.spent()
-        return self._prior_usd + total.cost_usd + total.unsettled_usd
+        """Everything the ledger holds: every checkout's and every run's (D41)."""
+        return self.ledger.total_usd()
 
     def worst_case_usd(self, model: str, params: dict[str, Any], max_tokens: int) -> float | None:
         """The most the next request could cost, or None if it is unpriced.
@@ -1122,19 +1253,6 @@ class LLMClient:
         prompt = max(int(estimate * self.HOSTED_COUNT_MARGIN),
                      estimate_prompt_tokens(params["messages"], params.get("tools")))
         return prompt * max(price.input, price.cache_write) + max_tokens * price.output
-
-    def _check_spend_cap(self, model: str, params: dict[str, Any], max_tokens: int) -> None:
-        if self.max_total_usd is None:
-            return
-        worst = self.worst_case_usd(model, params, max_tokens)
-        if worst is None:
-            raise SpendCapReached(f"{model} has no price, so a spend cap cannot be enforced")
-        spent = self.total_spent_usd()
-        if spent + worst > self.max_total_usd:
-            raise SpendCapReached(
-                f"spend cap: ${spent:.4f} spent + up to ${worst:.4f} for the next call "
-                f"> ${self.max_total_usd:.2f}"
-            )
 
     def spent(self, tag_prefix: str = "") -> TagSpend:
         """Total spend of every tag starting with `tag_prefix`."""

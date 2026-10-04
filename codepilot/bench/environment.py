@@ -270,6 +270,7 @@ async def _docker_sandbox(root: Path, image: str | None) -> Sandbox:
 
     image = image or BENCH_IMAGE
     official = image.startswith("swebench/")
+    _require_local_image(image)
     sandbox = DockerSandbox(
         image,
         memory="4g",
@@ -281,6 +282,29 @@ async def _docker_sandbox(root: Path, image: str | None) -> Sandbox:
     )
     await sandbox.start()
     return sandbox
+
+
+def _require_local_image(image: str) -> None:
+    """Refuse to start from an image that is not already on this machine.
+
+    docker-py's `containers.run` pulls a missing image silently, and an
+    official SWE-bench image is several GB (the flask-4992 one here is
+    4.23 GB). Pulling is the operator's decision, made with `docker pull`,
+    which shows the size (D41).
+    """
+    try:
+        import docker
+
+        docker.from_env().images.get(image)
+    except ImportError:
+        return
+    except Exception as exc:  # noqa: BLE001 - ImageNotFound or no daemon
+        if type(exc).__name__ == "ImageNotFound":
+            raise RuntimeError(
+                f"{image} is not on this machine; pull it first (`docker pull {image}`), "
+                "after checking its size"
+            ) from None
+        raise
 
 
 def _bash() -> str:

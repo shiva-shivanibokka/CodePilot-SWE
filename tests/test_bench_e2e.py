@@ -277,7 +277,7 @@ async def test_the_spend_cap_stops_the_whole_run_across_both_arms(task, monkeypa
         return _fake_reply(tool=("list_files", {}))
 
     monkeypatch.setattr(litellm, "acompletion", fake)
-    ledger = Ledger(tmp_path / "ledger.jsonl")
+    ledger = Ledger(tmp_path / "ledger.sqlite")
     client = LLMClient(model="claude-haiku-4-5", ledger=ledger, max_total_usd=0.02)
     with pytest.raises(SpendCapReached):
         await run_instance(
@@ -286,7 +286,7 @@ async def test_the_spend_cap_stops_the_whole_run_across_both_arms(task, monkeypa
             client=client, env_options={"install": False, "venv": False},
         )
     assert ledger.total_usd() <= 0.02
-    assert len(sent) == len([r for r in ledger.rows() if r.get("status") == "pending"]) >= 1
+    assert len(sent) == len(ledger.rows()) >= 1, "every request has its row"
 
 
 async def test_a_new_run_counts_what_the_ledger_already_holds(tmp_path, monkeypatch):
@@ -294,7 +294,7 @@ async def test_a_new_run_counts_what_the_ledger_already_holds(tmp_path, monkeypa
 
     from codepilot.llm import Ledger, LLMClient, SpendCapReached
 
-    ledger = Ledger(tmp_path / "ledger.jsonl")
+    ledger = Ledger(tmp_path / "ledger.sqlite")
     ledger.append({"tag": "earlier", "cost_usd": 0.019})
 
     async def fake(**params):

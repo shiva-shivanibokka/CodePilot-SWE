@@ -31,7 +31,9 @@ def response(text="", tool_calls=(), finish="stop", prompt=100, completion=20, *
         for cid, name, args in tool_calls
     ]
     return SimpleNamespace(
-        model="stub-model",
+        # None: the reply carries no model name, so the requested one stands.
+        # A name that differs from the request aborts the run (D41).
+        model=None,
         choices=[
             SimpleNamespace(
                 message=SimpleNamespace(content=text, tool_calls=calls or None),
@@ -310,7 +312,7 @@ async def test_every_call_is_in_the_ledger_before_chat_returns(wire, tmp_path):
 
     sent, replies = wire
     replies += [response(text="a", prompt=1000, completion=10), litellm.BadRequestError("bad", model="x", llm_provider="anthropic")]
-    ledger = Ledger(tmp_path / "ledger.jsonl")
+    ledger = Ledger(tmp_path / "ledger.sqlite")
     client = LLMClient(model="claude-haiku-4-5", ledger=ledger)
     client.tag = "inst:agent"
     await client.chat([{"role": "user", "content": "hi"}], max_tokens=10)
@@ -475,7 +477,7 @@ async def test_a_rerun_is_served_from_the_response_cache_and_not_paid_twice(wire
 
     sent, replies = wire
     replies += [response(text="first", prompt=1000, completion=10), response(text="other")]
-    ledger = Ledger(tmp_path / "l.jsonl")
+    ledger = Ledger(tmp_path / "l.sqlite")
     msgs = [{"role": "user", "content": "hi"}]
 
     one = LLMClient(model="claude-haiku-4-5", response_cache=tmp_path / "cache", ledger=ledger)
@@ -484,7 +486,7 @@ async def test_a_rerun_is_served_from_the_response_cache_and_not_paid_twice(wire
     second = await again.chat(msgs, max_tokens=10, cache_tag="i:agent:0")
     assert len(sent) == 1, "the rerun must not reach the provider"
     assert second.text == first.text and second.cost_usd == 0.0
-    assert ledger.rows()[-1]["cached"] is True and ledger.rows()[-1]["cost_usd"] == 0.0
+    assert ledger.rows()[-1]["status"] == "cached" and ledger.rows()[-1]["cost_usd"] == 0.0
 
     # A different attempt of the same request is a different sample, not a copy.
     await again.chat(msgs, max_tokens=10, cache_tag="i:agent:1")
@@ -567,15 +569,17 @@ async def test_a_call_that_dies_mid_response_stays_charged_at_the_worst_case(wir
     from codepilot.llm import Ledger
 
     sent, replies = wire
-    replies.append(failure)
-    ledger = Ledger(tmp_path / "l.jsonl")
+    replies += [failure, failure]
+    ledger = Ledger(tmp_path / "l.sqlite")
     client = LLMClient(model="claude-haiku-4-5", ledger=ledger)
     with pytest.raises(type(failure)):
         await client.chat([{"role": "user", "content": "hi"}], max_tokens=1000)
+    assert len(sent) == 2, "a transport error is retried once (D41)"
     pending = [r for r in ledger.rows() if r.get("status") == "pending"]
-    assert len(pending) == 1 and pending[0]["cost_usd"] >= 1000 * 5e-6
-    assert ledger.total_usd() == pytest.approx(pending[0]["cost_usd"])
-    assert client.total_spent_usd() == pytest.approx(pending[0]["cost_usd"])
+    assert len(pending) == 2 and all(r["cost_usd"] >= 1000 * 5e-6 for r in pending)
+    assert all(type(failure).__name__ in r["error"] for r in pending)
+    assert ledger.total_usd() == pytest.approx(sum(r["cost_usd"] for r in pending))
+    assert client.total_spent_usd() == pytest.approx(ledger.total_usd())
 
 
 async def test_an_overloaded_error_in_a_200_is_retried_and_both_attempts_are_charged(wire, tmp_path):
@@ -583,7 +587,7 @@ async def test_an_overloaded_error_in_a_200_is_retried_and_both_attempts_are_cha
 
     sent, replies = wire
     replies += [_overloaded_in_a_200(), _overloaded_in_a_200()]
-    ledger = Ledger(tmp_path / "l.jsonl")
+    ledger = Ledger(tmp_path / "l.sqlite")
     client = LLMClient(model="claude-haiku-4-5", ledger=ledger)
     with pytest.raises(litellm.InternalServerError):
         await client.chat([{"role": "user", "content": "hi"}], max_tokens=1000)
@@ -599,7 +603,7 @@ async def test_an_interrupted_call_stays_charged(wire, tmp_path, interrupt):
 
     sent, replies = wire
     replies.append(interrupt())
-    ledger = Ledger(tmp_path / "l.jsonl")
+    ledger = Ledger(tmp_path / "l.sqlite")
     client = LLMClient(model="claude-haiku-4-5", ledger=ledger)
     with pytest.raises(interrupt):
         await client.chat([{"role": "user", "content": "hi"}], max_tokens=1000)
@@ -611,12 +615,13 @@ async def test_a_success_settles_the_pending_row_to_the_real_cost(wire, tmp_path
 
     sent, replies = wire
     replies.append(response(text="ok", prompt=100, completion=10))
-    ledger = Ledger(tmp_path / "l.jsonl")
+    ledger = Ledger(tmp_path / "l.sqlite")
     await LLMClient(model="claude-haiku-4-5", ledger=ledger).chat(
         [{"role": "user", "content": "hi"}], max_tokens=1000)
     assert ledger.total_usd() == pytest.approx(100 * 1e-6 + 10 * 5e-6)
-    statuses = [r.get("status") for r in ledger.rows()]
-    assert statuses == ["pending", "settled"]
+    rows = ledger.rows()
+    assert [r["status"] for r in rows] == ["settled"], "one row, reserved then updated"
+    assert rows[0]["worst_usd"] > rows[0]["cost_usd"]
 
 
 async def test_a_genuine_4xx_settles_at_zero(wire, tmp_path):
@@ -624,7 +629,7 @@ async def test_a_genuine_4xx_settles_at_zero(wire, tmp_path):
 
     sent, replies = wire
     replies.append(litellm.BadRequestError("bad", model="x", llm_provider="anthropic"))
-    ledger = Ledger(tmp_path / "l.jsonl")
+    ledger = Ledger(tmp_path / "l.sqlite")
     with pytest.raises(LLMError):
         await LLMClient(model="claude-haiku-4-5", ledger=ledger).chat(
             [{"role": "user", "content": "hi"}], max_tokens=1000)

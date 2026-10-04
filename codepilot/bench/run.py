@@ -37,7 +37,8 @@ from pathlib import Path
 from codepilot.bench import swebench
 from codepilot.bench.environment import BenchEnv, swebench_image
 from codepilot.bench.harness import ARMS, ArmConfig, InstanceResult, run_instance
-from codepilot.llm import AbortRun, Ledger, price_for
+from codepilot.bench.runlock import RunLock, RunLocked, break_stale_lock
+from codepilot.llm import AbortRun, Ledger, is_local, price_for
 
 CHECK_ARMS = ("gold", "empty")
 
@@ -73,15 +74,15 @@ def choose_instances(args) -> list[dict]:
     return sample(args.sample, args.seed)
 
 
-#: One ledger per project, wherever the results go (D38). Pointing --out at a
-#: new file must not start a fresh, empty ledger — the run-wide cap counts
-#: everything this ledger holds.
-PROJECT_LEDGER = Path(__file__).resolve().parents[2] / "bench" / "spend-ledger.jsonl"
+#: The most this project may ever spend on paid model calls, across every run
+#: and every checkout (the user-level ledger holds them all). Equal to the
+#: planned cap in bench/STUDY_PLAN.md; a higher --max-total-usd is refused.
+PROJECT_MAX_USD = 20.0
 
 
 def ledger_path(out: str | Path) -> Path:
-    """The ledger for a run writing to `out`: always the project's."""
-    return PROJECT_LEDGER
+    """The ledger for a run writing to `out`: always the user-level one (D41)."""
+    return Ledger.default().path
 
 
 def dry_run(args, model_arms: list[str]) -> int:
@@ -94,13 +95,13 @@ def dry_run(args, model_arms: list[str]) -> int:
         max_cost_per_attempt=args.max_cost, max_prompt_tokens=args.max_prompt_tokens,
         max_output_tokens=args.max_output_tokens,
     )
-    already = Ledger(PROJECT_LEDGER).total_usd() if PROJECT_LEDGER.is_file() else 0.0
+    already = Ledger.default().total_usd()
     print(f"dry run: {n} instance(s) x arms {model_arms} x {args.attempts} attempt(s) on {args.model}")
     print(f"  caps: ${args.max_cost:.2f}/agent attempt, {args.max_prompt_tokens:,} prompt tokens/call, "
           f"{args.max_output_tokens:,} output tokens/agent call")
     for arm in model_arms:
         print(f"  worst case {arm:<9} ${worst[arm]:.2f}")
-    print(f"  worst case total     ${worst['total']:.2f}  (+ ${already:.2f} already in {PROJECT_LEDGER.name})")
+    print(f"  worst case total     ${worst['total']:.2f}  (+ ${already:.2f} already in the ledger)")
     if args.max_total_usd is not None and worst["total"] + already > args.max_total_usd:
         print(f"  ! exceeds --max-total-usd ${args.max_total_usd:.2f}: refusing")
         return 2
@@ -155,6 +156,8 @@ async def main(argv: list[str] | None = None) -> int:
     target = ap.add_mutually_exclusive_group(required=True)
     target.add_argument("--instances", nargs="+", help="SWE-bench Lite instance ids")
     target.add_argument("--sample", type=int, help="this many instances, sampled with --seed")
+    target.add_argument("--break-stale-lock", action="store_true", dest="break_stale_lock",
+                        help="remove a run lock whose process is no longer running, then exit")
     ap.add_argument("--seed", type=int, default=0,
                     help="sampling seed for --sample, and the run seed sent to the model")
     ap.add_argument("--no-model-seed", action="store_true",
@@ -200,14 +203,46 @@ async def main(argv: list[str] | None = None) -> int:
         except (AttributeError, ValueError):
             pass
 
+    if args.break_stale_lock:
+        try:
+            print(break_stale_lock())
+        except RunLocked as exc:
+            print(f"  ! {exc}")
+            return 4
+        return 0
+
     model_arms_requested = [a for a in args.arms if a in ARMS]
     if model_arms_requested and price_for(args.model) is None:
         # A paid model with no price would run with no dollar ceiling (D26).
         print(f"  ! {args.model} has no price (codepilot.llm.PRICING or LiteLLM's map); "
               "refusing to run a model whose spend cannot be capped.")
         return 2
+    paid = bool(model_arms_requested) and not is_local(args.model)
+    if paid:
+        if args.max_total_usd is None:
+            print("  ! a paid model needs --max-total-usd (the run-wide cap, D28)")
+            return 2
+        if args.max_total_usd > PROJECT_MAX_USD:
+            print(f"  ! --max-total-usd ${args.max_total_usd:.2f} is above this project's hard "
+                  f"maximum ${PROJECT_MAX_USD:.2f} (D41)")
+            return 2
     if args.dry_run:
         return dry_run(args, model_arms_requested)
+    lock = RunLock() if paid else None
+    if lock is not None:
+        try:
+            lock.acquire()
+        except RunLocked as exc:
+            print(f"  ! {exc}")
+            return 4
+    try:
+        return await _run(args, model_arms_requested)
+    finally:
+        if lock is not None:
+            lock.release()
+
+
+async def _run(args, model_arms_requested: list[str]) -> int:
     load_keys(args.env_file)
     setups = json.loads(Path(args.setups).read_text(encoding="utf-8")) if args.setups else {}
     instances = choose_instances(args)
@@ -233,7 +268,7 @@ async def main(argv: list[str] | None = None) -> int:
     for item in args.model_option:
         key, _, value = item.partition("=")
         extra[key] = int(value) if value.isdigit() else value
-    from codepilot.llm import Ledger, LLMClient
+    from codepilot.llm import LLMClient
 
     ledger_file = ledger_path(out)
     client = LLMClient(model=args.model, api_base=args.api_base, extra=extra,
