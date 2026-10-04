@@ -231,3 +231,35 @@ async def test_every_model_call_emits_a_cost_event(harness):
     costs = [e for e in stream.events if e.type is EventType.COST]
     assert len(costs) == 2
     assert all(e.data["cost_usd"] == 0.001 for e in costs)
+
+
+# ----------------------------------------------------------- compaction (D32)
+
+
+@pytest.mark.asyncio
+async def test_compaction_calls_are_counted_in_the_budget_and_the_cost_events(harness):
+    """Reproduction: Conversation.compact makes a model call of its own, and
+    the loop neither recorded it in the budget nor emitted a COST event, so
+    every compaction was spend that no budget, Spend or result row saw."""
+    ctx, stream, _ = harness
+
+    class Counting(StubClient):
+        async def chat(self, messages, **kw):
+            if kw.get("system") == "You compact agent transcripts without losing decisions or state.":
+                self.compactions = getattr(self, "compactions", 0) + 1
+                self.calls += 1
+                return text_reply("SUMMARY")
+            return await super().chat(messages, **kw)
+
+    script = [tool_reply(("list_files", {})) for _ in range(12)] + [tool_reply(("finish", {"summary": "ok"}))]
+    for r in script:
+        r.usage = Usage(input_tokens=5000, output_tokens=50)
+    client = Counting(script)
+    loop = AgentLoop(client, ctx, new_conversation(), Budget(max_usd=10.0, max_turns=100), effort=None)
+    loop.convo.compact_at = 1000
+    await loop.run("list files a lot")
+    assert getattr(client, "compactions", 0) >= 1
+    costs = [e for e in stream.events if e.type is EventType.COST]
+    assert len(costs) == client.calls, "every model call, compaction included, has a COST event"
+    assert loop.budget.turns == client.calls
+    assert any(e.data.get("purpose") == "compaction" for e in costs)

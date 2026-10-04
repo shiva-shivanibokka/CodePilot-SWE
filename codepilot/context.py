@@ -51,6 +51,9 @@ class Conversation:
     usage: Usage = field(default_factory=Usage)
     compact_at: int = DEFAULT_COMPACT_AT
     _last_token_count: int = 0
+    #: The summary call's reply from the latest compaction, for the caller to
+    #: account for and then clear. Compaction spends money too (D32).
+    last_compaction_reply: Any = None
     _compactions: int = 0
 
     # ------------------------------------------------------------------
@@ -205,6 +208,7 @@ class Conversation:
             max_tokens=2048,
         )
         self.usage = self.usage + reply.usage
+        self.last_compaction_reply = reply
         self.messages = [
             {
                 "role": "user",

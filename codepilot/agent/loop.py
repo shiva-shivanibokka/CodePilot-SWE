@@ -108,6 +108,29 @@ class AgentLoop:
                         EventType.THINKING,
                         "compacted the earlier conversation to stay within the window",
                     )
+                # Compaction is a model call too: it is budgeted and reported
+                # like any other, whether or not it produced a summary (D32).
+                summary_reply = self.convo.last_compaction_reply
+                if summary_reply is not None:
+                    self.convo.last_compaction_reply = None
+                    self.budget.record(
+                        summary_reply.cost_usd,
+                        summary_reply.usage.input_tokens + summary_reply.usage.output_tokens,
+                    )
+                    cost = (f"${summary_reply.cost_usd:.5f}" if summary_reply.cost_usd is not None
+                            else "unpriced")
+                    events.emit(
+                        EventType.COST,
+                        f"{cost} · compaction · {summary_reply.usage.input_tokens:,} in / "
+                        f"{summary_reply.usage.output_tokens:,} out",
+                        cost_usd=summary_reply.cost_usd,
+                        input_tokens=summary_reply.usage.input_tokens,
+                        output_tokens=summary_reply.usage.output_tokens,
+                        cache_read=summary_reply.usage.cache_read_tokens,
+                        cache_write=summary_reply.usage.cache_write_tokens,
+                        model=summary_reply.model,
+                        purpose="compaction",
+                    )
 
             # --- ask the model ----------------------------------------------
             reply = await self.client.chat(

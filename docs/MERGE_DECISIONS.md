@@ -822,3 +822,16 @@ history-editing check (compaction rewrites history; D32 counts it) is
 untested against the real API. Compaction on a Claude 5.5 model may make
 later thinking blocks invalid; the planned paid run uses claude-haiku-4-5,
 which does not think unless asked, so it does not hit this.
+
+## D32. Compaction calls are budgeted and reported
+
+`Conversation.compact` (`codepilot/context.py`, the summary call) makes a
+model call of its own; `AgentLoop` neither recorded it in the `Budget` nor
+emitted a `COST` event, so every compaction was spend the per-attempt budget,
+the harness's `Spend` and the result rows never saw. Reproduced first:
+`tests/test_loop.py::test_compaction_calls_are_counted_in_the_budget_and_the_cost_events`
+counted 10 COST events for 13 model calls. Now `compact` leaves its reply on
+`last_compaction_reply`, and the loop records it in the budget and emits a
+`COST` event with `purpose="compaction"`. In the benchmark the spend also
+reaches the row and the ledger through the client (D27), and the run-wide cap
+(D28) checks it before it is made.
