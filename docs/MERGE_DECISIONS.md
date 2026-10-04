@@ -1127,3 +1127,51 @@ Also: the Docker backend no longer starts from an image that is not already
 present (`containers.run` would pull it silently, several GB); the operator
 pulls with `docker pull`, which shows the size.
 `test_a_missing_docker_image_is_never_pulled_silently`.
+
+## D42. Hygiene from the review
+
+* **D15's test list was incomplete.** The complete fate of every test in
+  Autonomous-SWE-Agent's suite (`git show 9fd0895:tests/<file>`):
+  - `test_providers.py`: `TestRegistry`, `TestLitellmModel`,
+    `TestProvidersPayload`, `TestToOpenAITools` → `tests/test_providers.py`;
+    `TestAssistantMessage` → covered by
+    `tests/test_llm.py::test_tool_use_and_tool_result_blocks_become_openai_tool_messages`;
+    `TestLLMConfig` retired with `LLMConfig`.
+  - `test_harness.py`: `TestGithubUrlParser` → `tests/test_github_integration.py`;
+    `TestBuildTestCommand::test_no_timeout_flag` → `tests/test_bench_grading.py`;
+    the other four `TestBuildTestCommand` tests asserted the replaced command
+    shape (`-x`, capped node ids, whole-suite fallback) and are superseded by
+    `test_the_graded_command_has_no_exitfirst_no_k_and_no_cap`,
+    `test_bare_names_run_the_patched_files`,
+    `test_django_runs_its_own_runner_on_the_patched_modules`;
+    `TestInstanceResult` retired with B's `InstanceResult`.
+  - `test_regressions.py`: `TestJsonExtraction`, `TestSearchReplacePatching` →
+    `tests/test_agentless.py`; `TestLocalWorkspaceRefusals` →
+    `tests/test_permissions.py`; `TestLocalWorkspacePaths::test_provider_keys_are_stripped…`
+    → `tests/test_local_sandbox.py`, the other five (`/repo` path mapping)
+    retired with the mapping; `TestPytestSummaryParsing` and
+    `TestValidationBaseline` (count-based) superseded by per-test parsing
+    (`tests/test_bench_testlog.py`) and `TestRegressionsByTestId`;
+    `TestSearchIndexCacheKey` superseded by the behavioural tests in
+    `tests/test_tools.py`; `TestBashTimeoutReporting` retired with B's bash
+    tool (CodePilot's sandbox appends `[timed out after Ns]`,
+    `tests/test_local_sandbox.py::test_a_timeout_kills_the_whole_process_tree`);
+    `TestTruncatedSampleRetry`: its two `apply_search_replace` checks were
+    ported, but **the re-ask itself had no test** —
+    restored now as `tests/test_agentless.py::test_a_truncated_sample_is_asked_again_with_twice_the_room`
+    (passes: the behaviour was intact, only its test was lost).
+  - `test_loop.py`, `test_tools.py`, `test_context.py`: retired with B's loop,
+    bash/editor tools and tiktoken context manager (D15 rows).
+* **D19 said "Five commits".** `git log main..sop-eval` lists six; D19's table
+  omitted `dd0b757` (an import-order fix for ruff in `record_run.py`, which was
+  not ported because `record_run.py` was retired, D15).
+* **CI** no longer lists the nonexistent `rebuild` branch.
+* **An empty, untracked `evals/` directory** left by the D16 move was removed.
+* **Personal paths in results.** 28 occurrences of the author's home directory
+  (temp checkouts, the Anaconda interpreter in a traceback) in the carried-over
+  recordings and the harness-check/smoke rows were replaced by `<HOME>`; all
+  files still parse. `bench.run`'s writer now redacts the home directory in
+  every new row as well as key-shaped strings.
+  `tests/test_bench_instances.py::test_committed_results_carry_no_personal_paths`
+  and `test_new_result_rows_have_the_home_directory_redacted` (both failed
+  first).

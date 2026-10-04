@@ -90,3 +90,23 @@ def test_the_spend_ledger_does_not_move_with_the_output_file():
     a = ledger_path("bench/results/one.jsonl")
     b = ledger_path("somewhere/else/two.jsonl")
     assert a == b and a.parent == codepilot.llm.LEDGER_DIR, "the user-level ledger (D41)"
+
+
+def test_committed_results_carry_no_personal_paths():
+    """E: recordings and result rows embedded home-directory paths."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "bench" / "results"
+    leaks = [p for p in root.rglob("*") if p.is_file() and "<user>" in p.read_text(encoding="utf-8", errors="replace")]
+    assert leaks == []
+
+
+def test_new_result_rows_have_the_home_directory_redacted():
+    from pathlib import Path
+
+    from codepilot.bench.run import redact
+
+    home = str(Path.home())
+    row = '{"log": "' + home.replace("\\", "\\\\") + '\\AppData\\x and ' + home.replace("\\", "/") + '/y"}'
+    clean, _ = redact(row)
+    assert Path.home().name not in clean and "<HOME>" in clean

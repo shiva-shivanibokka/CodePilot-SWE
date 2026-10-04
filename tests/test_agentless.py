@@ -128,3 +128,31 @@ def test_the_cost_estimate_scales_attempts_and_calls_as_documented():
     t = plan_tokens(measured, instances=50, seeds=3, attempts=3)
     assert t["agent"] == (150 * 3 * 1000, 150 * 3 * 10)
     assert t["agentless"] == (150 * 4 * 100, 150 * 4 * 1)  # 1 localisation + 3 samples
+
+
+async def test_a_truncated_sample_is_asked_again_with_twice_the_room(tmp_path):
+    """Restores B's TestTruncatedSampleRetry for the merged repair(): a reply
+    cut off at the token cap is re-asked once at double the cap, and the
+    re-asked reply is the one used."""
+    import json
+
+    from codepilot.bench.agentless.localize import LocalizationResult
+    from codepilot.bench.agentless.repair import SAMPLE_MAX_TOKENS, repair
+    from codepilot.llm import Reply, Usage
+
+    (tmp_path / "calc.py").write_text("def add(a, b):\n    return a - b\n", encoding="utf-8")
+    asked = []
+
+    class Model:
+        async def chat(self, messages, max_tokens=None, **kw):
+            asked.append(max_tokens)
+            if len(asked) == 1:
+                return Reply('{"search": "ret', [], [], "max_tokens", "m", Usage(10, 10), 1, 0.001)
+            text = json.dumps({"explanation": "fix", "search": "return a - b", "replace": "return a + b"})
+            return Reply(text, [], [], "end_turn", "m", Usage(10, 10), 1, 0.001)
+
+    loc = LocalizationResult(suspect_files=["calc.py"], suspect_locations=[], repo_map="")
+    result = await repair(Model(), "m", tmp_path, "add subtracts", loc, num_samples=1)
+    assert asked == [SAMPLE_MAX_TOKENS, SAMPLE_MAX_TOKENS * 2]
+    assert result.retried == 1 and result.calls == 2
+    assert result.samples[0].patched is not None and "a + b" in result.samples[0].patched

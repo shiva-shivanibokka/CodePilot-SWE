@@ -56,8 +56,15 @@ SECRET_PATTERNS = [
 
 
 def redact(text: str) -> tuple[str, int]:
-    """`text` with key-shaped substrings replaced, and how many there were."""
+    """`text` with key-shaped substrings and the home directory replaced, and
+    how many there were. Results are committed; neither belongs in them."""
     count = 0
+    home = str(Path.home())
+    # JSON-escaped form first, so it is not half-replaced by the plain one.
+    for form in (home.replace("\\", "\\\\"), home, home.replace("\\", "/")):
+        if form:
+            count += text.count(form)
+            text = text.replace(form, "<HOME>")
     for pattern in SECRET_PATTERNS:
         text, n = pattern.subn("[REDACTED]", text)
         count += n
