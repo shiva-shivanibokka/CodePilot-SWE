@@ -316,9 +316,49 @@ async def test_every_call_is_in_the_ledger_before_chat_returns(wire, tmp_path):
     rows = ledger.rows()
     assert len(rows) == 1 and rows[0]["tag"] == "inst:agent"
     assert rows[0]["cost_usd"] == pytest.approx(1000 * 1e-6 + 10 * 5e-6)
-    with pytest.raises(litellm.BadRequestError):
+    with pytest.raises(LLMError):
         await client.chat([{"role": "user", "content": "hi"}], max_tokens=10)
     rows = ledger.rows()
     assert len(rows) == 2 and "BadRequestError" in rows[1]["error"]
     assert ledger.total_usd("inst:") == pytest.approx(rows[0]["cost_usd"])
     assert client.spent("inst:").calls == 1
+
+
+# ---------------------------------------------------- sampling and 4xx (D29)
+#
+# Reproduced from the installed LiteLLM: get_supported_openai_params lists
+# `temperature` as supported for claude-opus-5-5 (which rejects it with a 400)
+# and does not list `seed` for Anthropic or Gemini, so drop_params removed the
+# seed silently while the run records claimed it was seeded.
+
+
+async def test_models_that_reject_sampling_params_are_not_sent_them(wire):
+    sent, replies = wire
+    replies += [response(text="a"), response(text="b"), response(text="c")]
+    opus = await LLMClient(model="claude-opus-5-5").chat(
+        [{"role": "user", "content": "hi"}], temperature=0.2, seed=7, max_tokens=10)
+    assert "temperature" not in sent[0] and "seed" not in sent[0]
+    assert opus.omitted_params == ["temperature", "seed"]
+    haiku = await LLMClient(model="claude-haiku-4-5").chat(
+        [{"role": "user", "content": "hi"}], temperature=0.2, seed=7, max_tokens=10)
+    assert sent[1]["temperature"] == 0.2 and "seed" not in sent[1]
+    assert haiku.omitted_params == ["seed"]
+    groq = await LLMClient(model="groq/llama-3.3-70b-versatile").chat(
+        [{"role": "user", "content": "hi"}], temperature=0.2, seed=7, max_tokens=10)
+    assert sent[2]["temperature"] == 0.2 and sent[2]["seed"] == 7
+    assert groq.omitted_params == []
+
+
+@pytest.mark.parametrize("error", [
+    litellm.BadRequestError("bad request", model="x", llm_provider="anthropic"),
+    litellm.UnprocessableEntityError("unprocessable", model="x", llm_provider="anthropic",
+                                     response=__import__("httpx").Response(422, request=__import__("httpx").Request("POST", "http://x"))),
+])
+async def test_a_rejected_request_aborts_the_run_instead_of_failing_the_agent(wire, error):
+    from codepilot.llm import AbortRun
+
+    sent, replies = wire
+    replies.append(error)
+    with pytest.raises(AbortRun):
+        await LLMClient(model="claude-haiku-4-5").chat([{"role": "user", "content": "hi"}], max_tokens=10)
+    assert len(sent) == 1, "a 4xx is not retried"

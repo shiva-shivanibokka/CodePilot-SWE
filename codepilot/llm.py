@@ -248,6 +248,9 @@ class Reply:
     usage: Usage
     latency_ms: int
     cost_usd: float | None
+    #: Sampling parameters asked for but not sent, because the model rejects
+    #: them or LiteLLM would have dropped them silently (D29).
+    omitted_params: list[str] = field(default_factory=list)
 
     @property
     def wants_tools(self) -> bool:
@@ -275,6 +278,14 @@ class AbortRun(LLMError):
     Raised for the global spend cap (D28) and for a request the provider
     rejected as malformed (D29). The benchmark harness re-raises it rather
     than recording an agent failure.
+    """
+
+
+class ProviderRejected(AbortRun):
+    """The provider refused the request itself (a 4xx other than 429).
+
+    A malformed or unsupported request is a harness or configuration bug, not
+    something the agent did, so it must stop the run rather than be scored.
     """
 
 
@@ -565,6 +576,39 @@ def _supports_reasoning(model: str) -> bool:
         return False
 
 
+#: Models that reject `temperature`/`top_p`/`top_k` with a 400 (claude-api
+#: reference, thinking & effort table): Opus 4.7/4.8, Opus 5/5.5, Sonnet 5 and
+#: 5.5 (non-default values), Fable/Mythos 5.x. Haiku 4.5 accepts them.
+_REJECTS_SAMPLING = re.compile(r"claude-(opus-4-[78]|opus-5|sonnet-5|fable-5|mythos-5)")
+
+
+def _sends(model: str, param: str) -> bool:
+    """Whether `param` would actually reach the provider for `model`.
+
+    False for a model known to reject it, and for any parameter LiteLLM does
+    not list as supported for the model — those it drops without a word
+    (`drop_params=True`), which is how a "seeded" Claude run used to be
+    recorded as seeded.
+    """
+    if param in ("temperature", "top_p") and _REJECTS_SAMPLING.search(model):
+        return False
+    try:
+        provider = provider_of(model)
+        bare = model.split("/", 1)[1] if model.startswith(provider + "/") else model
+        supported = _litellm().get_supported_openai_params(model=bare, custom_llm_provider=provider)
+    except Exception:  # noqa: BLE001 - unknown: do not send
+        return False
+    return bool(supported) and param in supported
+
+
+def _status_of(exc: BaseException) -> int | None:
+    status = getattr(exc, "status_code", None)
+    try:
+        return int(status) if status is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _retryable(exc: Exception) -> bool:
     name = type(exc).__name__
     return name in {
@@ -704,12 +748,18 @@ class LLMClient:
             params["api_key"] = self._api_key
         if tools:
             params["tools"] = to_openai_tools(tools)
+        omitted: list[str] = []
         if temperature is not None:
-            params["temperature"] = temperature
+            if _sends(model, "temperature"):
+                params["temperature"] = temperature
+            else:
+                omitted.append("temperature")
         if seed is not None:
-            # Honoured by providers that support it (OpenAI, Ollama, some
-            # others); drop_params removes it where it is not.
-            params["seed"] = seed
+            if _sends(model, "seed"):
+                params["seed"] = seed
+            else:
+                omitted.append("seed")
+        self._omitted = omitted
         if self._api_base:
             params["api_base"] = self._api_base
         params.update(self._extra)
@@ -764,20 +814,26 @@ class LLMClient:
                 failure = exc
             try:
                 raise failure
+            except litellm.ContextWindowExceededError as exc:
+                raise ProviderRejected(
+                    f"{model!r} rejected the request as too long for its context window "
+                    "(a 4xx: the run stops; see D29)"
+                ) from exc
             except litellm.NotFoundError as exc:
-                raise LLMError(
+                raise ProviderRejected(
                     f"Model {model!r} was not found. It may have been retired, or "
                     "need a provider prefix such as 'groq/' or 'gemini/'."
                 ) from exc
             except litellm.AuthenticationError as exc:
-                raise LLMError(f"The API key for {model!r} was rejected.") from exc
+                raise ProviderRejected(f"The API key for {model!r} was rejected.") from exc
             except litellm.PermissionDeniedError as exc:
-                raise LLMError(f"This key may not use {model!r}.") from exc
-            except litellm.ContextWindowExceededError as exc:
-                raise LLMError(
-                    f"The request no longer fits {model!r}'s context window."
-                ) from exc
+                raise ProviderRejected(f"This key may not use {model!r}.") from exc
             except Exception as exc:
+                status = _status_of(exc)
+                if status is not None and 400 <= status < 500 and status != 429:
+                    raise ProviderRejected(
+                        f"{model!r} rejected the request ({status}): {_first_line(exc)}"
+                    ) from exc
                 if _hopeless(exc):
                     raise LLMError(f"{model!r}: {_first_line(exc)}") from exc
                 if attempt >= self._max_retries or not _retryable(exc):
@@ -791,6 +847,7 @@ class LLMClient:
         # (D26); LiteLLM's completion_cost is not used, so 0 can never stand in
         # for "unknown".
         reply.cost_usd = cost_of(model, reply.usage)
+        reply.omitted_params = list(getattr(self, "_omitted", []))
         self._record(model, reply=reply)
         return reply
 
@@ -815,6 +872,7 @@ class LLMClient:
                 cost_usd=reply.cost_usd,
                 latency_ms=reply.latency_ms,
                 stop_reason=reply.stop_reason,
+                omitted_params=reply.omitted_params,
             )
         if error is not None:
             # A rejected request (4xx, rate limit) is not billed by the

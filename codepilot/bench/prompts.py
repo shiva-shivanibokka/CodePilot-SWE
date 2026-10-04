@@ -14,6 +14,13 @@ and in the README and bench/STUDY_PLAN.md, not discovered later:
 | turns | until `finish` or a budget | one | one per sample |
 | temperature | 0.2 for attempt 1, 1.0 after | 0.2 | 0.2 for sample 1, 1.0 after |
 
+The temperature schedule (and the per-sample seeds, D19) only reach models
+that accept them. Claude Opus 5.x / Sonnet 5.x reject temperature and no
+Anthropic or Gemini model takes a seed; on those the parameters are omitted
+and recorded per call (`omitted_params`, D29), so "same sampling schedule"
+holds only where the provider honours it. On claude-haiku-4-5 temperature is
+sent and seed is not.
+
 The agent's text is adapted from CodePilot's own loop prompt and from
 Autonomous-SWE-Agent's SWE-bench prompt (reproduce first, then fix, then
 verify). Agentless's is Autonomous-SWE-Agent's, with the shared base in front.

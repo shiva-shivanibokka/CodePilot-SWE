@@ -749,3 +749,35 @@ per-attempt `Budget`, which agentless calls never touched.
 measurement against Anthropic's tokenizer (D22 measured 1.39x for Qwen).
 The bound uses `max_tokens`, which the model may not use, so the cap is
 conservative: the run can stop with up to one call's worst case unspent.
+
+## D29. Sampling parameters only where they arrive; a rejected request stops the run
+
+**Sampling, reproduced from the installed library.** LiteLLM 1.103.2's
+`get_supported_openai_params` lists `temperature` for `claude-opus-5-5`, which
+rejects it with a 400 (claude-api reference: Opus 4.7/4.8/5/5.5, Sonnet 5/5.5
+and Fable/Mythos 5.x reject sampling parameters; Haiku 4.5 accepts them), and
+does **not** list `seed` for Anthropic or Gemini — with `drop_params=True` the
+seed was dropped silently while the run's own records said it was seeded.
+`tests/test_llm.py::test_models_that_reject_sampling_params_are_not_sent_them`
+failed first (`temperature` was in the request for claude-opus-5-5).
+
+Now `temperature`/`seed` are sent only when `_sends(model, param)` holds (not
+on the reject list, and listed by LiteLLM for that provider); whatever was
+omitted is recorded on the `Reply` and in each ledger row
+(`omitted_params`).
+
+**Correction to D13.** D13 says every arm follows the same sampling schedule.
+That holds where the provider honours the parameters (Groq, Ollama, OpenAI).
+On Anthropic no seed exists at all, and on Opus/Sonnet 5.x temperature is not
+sent either, so arms differ only by prompt and turn structure there, with the
+provider's default sampling. On claude-haiku-4-5 — the model of the planned
+paid run — temperature is sent and seed is not, so the 3-seed design cannot
+give reproducible repeats on it; the study plan says so.
+
+**4xx.** Any 4xx except 429 — 400, 401, 403, 404, 422, and LiteLLM's
+`ContextWindowExceededError` (a 400) — now raises `ProviderRejected`, an
+`AbortRun`: not retried, not scored as an agent failure, the run stops
+(`test_a_rejected_request_aborts_the_run_instead_of_failing_the_agent`, which
+failed first with the raw `BadRequestError`). 429 is still retried, then
+reported as an infrastructure error and excluded. Our own context guard (D22)
+is not a provider response and still counts as the arm failing.
