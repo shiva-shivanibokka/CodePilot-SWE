@@ -286,7 +286,7 @@ async def test_the_spend_cap_stops_the_whole_run_across_both_arms(task, monkeypa
             client=client, env_options={"install": False, "venv": False},
         )
     assert ledger.total_usd() <= 0.02
-    assert len(sent) == len(ledger.rows()) >= 1
+    assert len(sent) == len([r for r in ledger.rows() if r.get("status") == "pending"]) >= 1
 
 
 async def test_a_new_run_counts_what_the_ledger_already_holds(tmp_path, monkeypatch):

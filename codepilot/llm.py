@@ -331,11 +331,16 @@ class SpendCapReached(AbortRun):
 
 
 class Ledger:
-    """Append-only record of every model call, one JSON line each (D27).
+    """Append-only record of every model request (D27, D38).
 
-    Written from inside `LLMClient.chat` the moment a call returns or fails,
-    flushed and fsync'd, so a crash, a kill or an exception later in the same
-    arm can never lose what was spent. Totals are read back from the file.
+    Each request is written **before** it is sent, as `status: "pending"` at
+    its worst-case cost, then settled by a second row (`status: "settled"`,
+    same `call_id`) carrying the real cost once a response has been parsed. A
+    request that ends any other way — a timeout or protocol error mid-body, an
+    error event inside a status-200 stream, an interrupt, a kill — is never
+    settled and stays charged at its worst case. A provider's clean 4xx
+    rejection is settled at $0. Rows are only ever appended (flushed and
+    fsync'd); totals are computed from them.
     """
 
     def __init__(self, path: Path | str) -> None:
@@ -355,10 +360,24 @@ class Ledger:
         return [json.loads(x) for x in self.path.read_text(encoding="utf-8").splitlines() if x.strip()]
 
     def total_usd(self, tag_prefix: str = "") -> float:
-        return sum(
-            float(r.get("cost_usd") or 0.0)
-            for r in self.rows()
-            if str(r.get("tag", "")).startswith(tag_prefix)
+        """Settled costs, plus the worst case of every request never settled."""
+        pending: dict[str, float] = {}
+        settled: dict[str, float] = {}
+        loose = 0.0
+        for r in self.rows():
+            if not str(r.get("tag", "")).startswith(tag_prefix):
+                continue
+            cost = float(r.get("cost_usd") or 0.0)
+            call = r.get("call_id")
+            status = r.get("status")
+            if call is None:
+                loose += cost
+            elif status == "pending":
+                pending[call] = cost
+            elif status == "settled":
+                settled[call] = cost
+        return loose + sum(settled.get(c, cost) for c, cost in pending.items()) + sum(
+            cost for c, cost in settled.items() if c not in pending
         )
 
 
@@ -370,6 +389,8 @@ class TagSpend:
     cost_usd: float = 0.0
     calls: int = 0
     unpriced_calls: int = 0
+    #: Worst-case cost of requests that never settled (D38).
+    unsettled_usd: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -659,6 +680,23 @@ def _status_of(exc: BaseException) -> int | None:
         return None
 
 
+def estimate_prompt_tokens(messages: list[dict[str, Any]], tools: Any = None) -> int:
+    """A deliberately generous token estimate for a request (D38).
+
+    max(characters / 2.5, UTF-8 bytes / 3): the byte term keeps non-Latin
+    text, which tokenizers split far more finely than English, from being
+    undercounted the way a characters-per-token rule would.
+    """
+    text = json.dumps({"m": messages, "t": tools}, ensure_ascii=False, default=str)
+    return int(max(len(text) / 2.5, len(text.encode("utf-8")) / 3))
+
+
+def _status_200_error(exc: BaseException) -> bool:
+    """An error event delivered inside a successful (200) response."""
+    text = str(exc).lower()
+    return "overloaded_error" in text or '"api_error"' in text or "'api_error'" in text
+
+
 def _retryable(exc: Exception) -> bool:
     name = type(exc).__name__
     return name in {
@@ -668,7 +706,7 @@ def _retryable(exc: Exception) -> bool:
         "APIConnectionError",
         "Timeout",
         "APIError",
-    } or "overloaded" in str(exc).lower()
+    } or "overloaded" in str(exc).lower() or _status_200_error(exc)
 
 
 def _hopeless(exc: Exception) -> bool:
@@ -726,6 +764,7 @@ class LLMClient:
         #: benchmark sets it to "<instance>:<arm>" before each arm.
         self.tag = ""
         self._spend: dict[str, TagSpend] = {}
+        self._unsettled: dict[str, tuple[str, float]] = {}
         self._api_key = api_key
         #: For a self-hosted server, e.g. an Ollama endpoint.
         self._api_base = api_base
@@ -874,12 +913,14 @@ class LLMClient:
         attempt = 0
         while True:
             self._check_spend_cap(model, params, max_tokens)
+            call_id = uuid.uuid4().hex
+            self._open(call_id, model, self.worst_case_usd(model, params, max_tokens))
             start = time.monotonic()
             try:
                 response = await litellm.acompletion(**params)
                 break
             except BaseException as exc:
-                self._record(model, error=exc)
+                self._record(model, error=exc, call_id=call_id)
                 if not isinstance(exc, Exception):
                     raise
                 failure = exc
@@ -919,7 +960,7 @@ class LLMClient:
         # for "unknown".
         reply.cost_usd = cost_of(model, reply.usage)
         reply.omitted_params = list(getattr(self, "_omitted", []))
-        self._record(model, reply=reply)
+        self._record(model, reply=reply, call_id=call_id)
         self._cache_put(key, reply)
         return reply
 
@@ -978,14 +1019,34 @@ class LLMClient:
         tmp.write_text(json.dumps(data, default=str), encoding="utf-8")
         tmp.replace(path)
 
+    def _open(self, call_id: str, model: str, worst: float | None) -> None:
+        """Charge a request at its worst case before it is sent (D38)."""
+        spend = self._spend.setdefault(self.tag, TagSpend())
+        self._unsettled[call_id] = (self.tag, worst or 0.0)
+        spend.unsettled_usd += worst or 0.0
+        if self.ledger is not None:
+            self.ledger.append({"at": time.time(), "call_id": call_id, "status": "pending",
+                                "tag": self.tag, "model": model, "cost_usd": worst})
+
+    def _settle(self, call_id: str | None) -> None:
+        if call_id is None or call_id not in self._unsettled:
+            return
+        tag, worst = self._unsettled.pop(call_id)
+        self._spend.setdefault(tag, TagSpend()).unsettled_usd -= worst
+
     def _record(self, model: str, *, reply: Reply | None = None, error: BaseException | None = None,
-                cached: bool = False) -> None:
-        """Account for one call, in memory and in the ledger, immediately."""
+                cached: bool = False, call_id: str | None = None) -> None:
+        """Account for one request's outcome, in memory and in the ledger."""
         spend = self._spend.setdefault(self.tag, TagSpend())
         row: dict[str, Any] = {
             "at": time.time(), "tag": self.tag, "model": model, "cached": cached,
         }
+        if call_id is not None:
+            row["call_id"] = call_id
         if reply is not None:
+            if call_id is not None:
+                row["status"] = "settled"
+                self._settle(call_id)
             spend.usage = spend.usage + reply.usage
             spend.calls += 1
             if reply.cost_usd is None:
@@ -1003,9 +1064,20 @@ class LLMClient:
                 omitted_params=reply.omitted_params,
             )
         if error is not None:
-            # A rejected request (4xx, rate limit) is not billed by the
-            # providers this targets; it is still recorded.
-            row.update(error=f"{type(error).__name__}: {_first_line(error)}", cost_usd=0.0)
+            status = _status_of(error)
+            clean_rejection = (
+                status is not None and 400 <= status < 500 and not _status_200_error(error)
+            )
+            row["error"] = f"{type(error).__name__}: {_first_line(error)}"
+            if clean_rejection:
+                # The provider refused the request before doing any work: not
+                # billed. Settled at $0.
+                row.update(status="settled", cost_usd=0.0)
+                self._settle(call_id)
+            else:
+                # Ended mid-flight, or in a way that may still be billed: the
+                # pending row keeps its worst-case charge (D38).
+                row["status"] = "unsettled"
         if self.ledger is not None:
             self.ledger.append(row)
 
@@ -1017,7 +1089,8 @@ class LLMClient:
 
     def total_spent_usd(self) -> float:
         """Everything spent: this client's calls plus the ledger's history."""
-        return self._prior_usd + self.spent().cost_usd
+        total = self.spent()
+        return self._prior_usd + total.cost_usd + total.unsettled_usd
 
     def worst_case_usd(self, model: str, params: dict[str, Any], max_tokens: int) -> float | None:
         """The most the next request could cost, or None if it is unpriced.
@@ -1034,7 +1107,8 @@ class LLMClient:
             )
         except Exception:  # noqa: BLE001 - fall back to characters
             estimate = sum(len(json.dumps(m)) for m in params["messages"]) // 3
-        prompt = int(estimate * self.HOSTED_COUNT_MARGIN)
+        prompt = max(int(estimate * self.HOSTED_COUNT_MARGIN),
+                     estimate_prompt_tokens(params["messages"], params.get("tools")))
         return prompt * max(price.input, price.cache_write) + max_tokens * price.output
 
     def _check_spend_cap(self, model: str, params: dict[str, Any], max_tokens: int) -> None:
@@ -1059,6 +1133,7 @@ class LLMClient:
                 total.cost_usd += s.cost_usd
                 total.calls += s.calls
                 total.unpriced_calls += s.unpriced_calls
+                total.unsettled_usd += s.unsettled_usd
         return total
 
     #: LiteLLM's token count for a local model is a generic tokenizer and

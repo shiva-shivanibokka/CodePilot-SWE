@@ -160,7 +160,7 @@ def wire(monkeypatch):
     async def fake(**params):
         sent.append(params)
         item = replies.pop(0)
-        if isinstance(item, Exception):
+        if isinstance(item, BaseException):
             raise item
         return item
 
@@ -314,12 +314,12 @@ async def test_every_call_is_in_the_ledger_before_chat_returns(wire, tmp_path):
     client = LLMClient(model="claude-haiku-4-5", ledger=ledger)
     client.tag = "inst:agent"
     await client.chat([{"role": "user", "content": "hi"}], max_tokens=10)
-    rows = ledger.rows()
+    rows = [r for r in ledger.rows() if r.get("status") == "settled"]
     assert len(rows) == 1 and rows[0]["tag"] == "inst:agent"
     assert rows[0]["cost_usd"] == pytest.approx(1000 * 1e-6 + 10 * 5e-6)
     with pytest.raises(LLMError):
         await client.chat([{"role": "user", "content": "hi"}], max_tokens=10)
-    rows = ledger.rows()
+    rows = [r for r in ledger.rows() if r.get("status") == "settled"]
     assert len(rows) == 2 and "BadRequestError" in rows[1]["error"]
     assert ledger.total_usd("inst:") == pytest.approx(rows[0]["cost_usd"])
     assert client.spent("inst:").calls == 1
@@ -535,3 +535,106 @@ def test_the_prefix_report_says_haiku_cannot_cache_the_system_prompt_alone():
     assert report["minimum_cacheable_tokens"] == 4096
     assert report["prefixes"]["agent"]["caches_on_its_own"] is False
     assert cache_prefix_report("claude-opus-5-5")["prefixes"]["agent"]["caches_on_its_own"] is True
+
+
+# ------------------------------------------------ pending-row ledger (D38)
+#
+# A call that dies mid-response — an overloaded_error delivered inside a
+# status-200 stream, a read timeout or protocol error while the body is
+# arriving, a KeyboardInterrupt, a cancelled task — may still be billed, but
+# the ledger recorded it at $0. Each request is now ledgered *before* it is
+# sent, as pending at its worst-case cost, and settled to the real cost only
+# when a response is parsed; anything else leaves it charged at the worst case.
+
+import asyncio  # noqa: E402
+
+import httpx  # noqa: E402
+
+
+def _overloaded_in_a_200():
+    exc = litellm.InternalServerError(
+        'data: {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}',
+        llm_provider="anthropic", model="claude-haiku-4-5")
+    exc.status_code = 200
+    return exc
+
+
+@pytest.mark.parametrize("failure", [
+    httpx.ReadTimeout("read timed out mid-body"),
+    httpx.RemoteProtocolError("peer closed connection without sending complete message body"),
+])
+async def test_a_call_that_dies_mid_response_stays_charged_at_the_worst_case(wire, tmp_path, failure):
+    from codepilot.llm import Ledger
+
+    sent, replies = wire
+    replies.append(failure)
+    ledger = Ledger(tmp_path / "l.jsonl")
+    client = LLMClient(model="claude-haiku-4-5", ledger=ledger)
+    with pytest.raises(type(failure)):
+        await client.chat([{"role": "user", "content": "hi"}], max_tokens=1000)
+    pending = [r for r in ledger.rows() if r.get("status") == "pending"]
+    assert len(pending) == 1 and pending[0]["cost_usd"] >= 1000 * 5e-6
+    assert ledger.total_usd() == pytest.approx(pending[0]["cost_usd"])
+    assert client.total_spent_usd() == pytest.approx(pending[0]["cost_usd"])
+
+
+async def test_an_overloaded_error_in_a_200_is_retried_and_both_attempts_are_charged(wire, tmp_path):
+    from codepilot.llm import Ledger
+
+    sent, replies = wire
+    replies += [_overloaded_in_a_200(), _overloaded_in_a_200()]
+    ledger = Ledger(tmp_path / "l.jsonl")
+    client = LLMClient(model="claude-haiku-4-5", ledger=ledger)
+    with pytest.raises(litellm.InternalServerError):
+        await client.chat([{"role": "user", "content": "hi"}], max_tokens=1000)
+    assert len(sent) == 2, "retried once, within the retry limit"
+    pending = [r for r in ledger.rows() if r.get("status") == "pending"]
+    assert len(pending) == 2
+    assert ledger.total_usd() == pytest.approx(sum(r["cost_usd"] for r in pending)) and ledger.total_usd() > 0
+
+
+@pytest.mark.parametrize("interrupt", [KeyboardInterrupt, asyncio.CancelledError])
+async def test_an_interrupted_call_stays_charged(wire, tmp_path, interrupt):
+    from codepilot.llm import Ledger
+
+    sent, replies = wire
+    replies.append(interrupt())
+    ledger = Ledger(tmp_path / "l.jsonl")
+    client = LLMClient(model="claude-haiku-4-5", ledger=ledger)
+    with pytest.raises(interrupt):
+        await client.chat([{"role": "user", "content": "hi"}], max_tokens=1000)
+    assert ledger.total_usd() > 0, "an interrupted request may have been billed"
+
+
+async def test_a_success_settles_the_pending_row_to_the_real_cost(wire, tmp_path):
+    from codepilot.llm import Ledger
+
+    sent, replies = wire
+    replies.append(response(text="ok", prompt=100, completion=10))
+    ledger = Ledger(tmp_path / "l.jsonl")
+    await LLMClient(model="claude-haiku-4-5", ledger=ledger).chat(
+        [{"role": "user", "content": "hi"}], max_tokens=1000)
+    assert ledger.total_usd() == pytest.approx(100 * 1e-6 + 10 * 5e-6)
+    statuses = [r.get("status") for r in ledger.rows()]
+    assert statuses == ["pending", "settled"]
+
+
+async def test_a_genuine_4xx_settles_at_zero(wire, tmp_path):
+    from codepilot.llm import Ledger
+
+    sent, replies = wire
+    replies.append(litellm.BadRequestError("bad", model="x", llm_provider="anthropic"))
+    ledger = Ledger(tmp_path / "l.jsonl")
+    with pytest.raises(LLMError):
+        await LLMClient(model="claude-haiku-4-5", ledger=ledger).chat(
+            [{"role": "user", "content": "hi"}], max_tokens=1000)
+    assert ledger.total_usd() == 0.0
+
+
+def test_the_token_estimate_does_not_undercount_non_latin_text():
+    from codepilot.llm import estimate_prompt_tokens
+
+    latin = estimate_prompt_tokens([{"role": "user", "content": "a" * 3000}])
+    cjk = estimate_prompt_tokens([{"role": "user", "content": "字" * 3000}])
+    assert latin >= 3000 / 2.5
+    assert cjk >= 3000 * 3 / 3, "UTF-8 bytes / 3"

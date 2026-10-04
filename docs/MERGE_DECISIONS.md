@@ -974,3 +974,43 @@ agent used to evaluate Autonomous-SWE-Agent
    This repository's selection parses per-test outcomes but runs pytest, and
    skips the regression gate entirely for `django/django` (D12); using the
    official per-repo command there is listed in STUDY_PLAN.md.
+
+## D38. Pending rows, status-200 errors, a fixed ledger, generous token estimates
+
+Four gaps found by another project's second review, checked here and applied.
+
+1. **Pending-row ledger.** A request that dies after it was sent — an
+   `overloaded_error` delivered inside a status-200 stream, an
+   `httpx.ReadTimeout` or `RemoteProtocolError` while the body arrives, a
+   `KeyboardInterrupt`, a cancelled task — may be billed, and D27's ledger
+   recorded it at $0. Now each request is appended **before it is sent** as
+   `status: "pending"` at its worst-case cost (D28's bound), and settled by a
+   second row with the same `call_id` and the real cost once a response is
+   parsed. Anything else leaves it charged at the worst case, in the file and
+   in the client's running total that the cap reads. A provider's clean 4xx
+   is settled at $0. The file stays append-only: "update" is a later row that
+   supersedes, and `Ledger.total_usd` resolves them. Rows also carry
+   `unsettled_worst_usd`. Reproduced first —
+   `tests/test_llm.py::test_a_call_that_dies_mid_response_stays_charged_at_the_worst_case`
+   (ReadTimeout, RemoteProtocolError), `test_an_interrupted_call_stays_charged`
+   (KeyboardInterrupt, CancelledError), `test_a_success_settles_the_pending_row_to_the_real_cost`,
+   `test_a_genuine_4xx_settles_at_zero` — six failed before the change. The
+   fakes raise from inside the request (our client does not stream, so
+   "mid-response" means from within `acompletion`, after the request left).
+2. **Status-200 errors.** An `overloaded_error` / `api_error` that arrives
+   with status 200 is retryable (counts against D30's limit), stays charged
+   at the worst case, and is never treated as a $0 4xx.
+   `test_an_overloaded_error_in_a_200_is_retried_and_both_attempts_are_charged`:
+   two requests, two pending rows, both charged.
+3. **Fixed ledger path.** The ledger defaulted to `<out>.ledger.jsonl`, so a
+   new `--out` started an empty ledger and reset the run-wide cap. Now
+   `bench.run` always uses `bench/spend-ledger.jsonl` (`PROJECT_LEDGER`); the
+   `--ledger` option is gone. `tests/test_bench_instances.py::test_the_spend_ledger_does_not_move_with_the_output_file`.
+4. **Token estimate.** The worst case now uses
+   `max(LiteLLM's count x 1.5, chars / 2.5, UTF-8 bytes / 3)` over the request's
+   messages and tools (`estimate_prompt_tokens`), so non-Latin text is not
+   undercounted. `test_the_token_estimate_does_not_undercount_non_latin_text`.
+
+Also fixed in the tests' fake: it raised only `Exception` subclasses, so a
+scripted `KeyboardInterrupt` was returned as a "response"; it now raises any
+`BaseException`.

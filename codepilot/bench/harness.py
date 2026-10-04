@@ -108,6 +108,9 @@ class InstanceResult:
     cost_usd: float
     unpriced_calls: int
     model_calls: int
+    #: Worst-case charge of this arm's requests that never settled (D38);
+    #: counted against the run-wide cap, not included in cost_usd.
+    unsettled_worst_usd: float
     input_tokens: int
     output_tokens: int
     cache_read_tokens: int
@@ -380,6 +383,9 @@ async def _run_arm(env: BenchEnv, instance: dict, arm: str, cfg: ArmConfig, clie
         recorded = client.spent(tag)
         spend.usage, spend.cost_usd = recorded.usage, recorded.cost_usd
         spend.calls, spend.unpriced_calls = recorded.calls, recorded.unpriced_calls
+        unsettled = recorded.unsettled_usd
+    else:
+        unsettled = 0.0
 
     report = await swebench.grade(env, instance, chosen_diff)
     env.restore()
@@ -399,6 +405,7 @@ async def _run_arm(env: BenchEnv, instance: dict, arm: str, cfg: ArmConfig, clie
         cost_usd=round(spend.cost_usd, 6),
         unpriced_calls=spend.unpriced_calls,
         model_calls=spend.calls,
+        unsettled_worst_usd=round(unsettled, 6),
         input_tokens=spend.usage.input_tokens,
         output_tokens=spend.usage.output_tokens,
         cache_read_tokens=spend.usage.cache_read_tokens,

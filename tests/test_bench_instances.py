@@ -79,3 +79,13 @@ def test_the_official_grader_will_not_pull_an_image_unless_asked():
 
     with pytest.raises(RuntimeError, match="not present"):
         ensure_image(type("C", (), {"images": Images()})(), "swebench/sweb.eval.x86_64.x:latest")
+
+
+def test_the_spend_ledger_does_not_move_with_the_output_file():
+    """D38: the ledger defaulted to <out>.ledger.jsonl, so pointing --out at a
+    new file started a fresh, empty ledger, and the run-wide cap with it."""
+    from codepilot.bench.run import ledger_path
+
+    a = ledger_path("bench/results/one.jsonl")
+    b = ledger_path("somewhere/else/two.jsonl")
+    assert a == b and a.name == "spend-ledger.jsonl"

@@ -73,6 +73,17 @@ def choose_instances(args) -> list[dict]:
     return sample(args.sample, args.seed)
 
 
+#: One ledger per project, wherever the results go (D38). Pointing --out at a
+#: new file must not start a fresh, empty ledger — the run-wide cap counts
+#: everything this ledger holds.
+PROJECT_LEDGER = Path(__file__).resolve().parents[2] / "bench" / "spend-ledger.jsonl"
+
+
+def ledger_path(out: str | Path) -> Path:
+    """The ledger for a run writing to `out`: always the project's."""
+    return PROJECT_LEDGER
+
+
 def load_keys(paths: list[str]) -> None:
     """Load provider keys into this process only. Never printed."""
     from dotenv import load_dotenv
@@ -152,8 +163,6 @@ async def main(argv: list[str] | None = None) -> int:
                          "includes what the ledger already records (D28)")
     ap.add_argument("--response-cache", default=None, dest="response_cache",
                     help="directory of stored replies; a rerun is served from it at $0 (D33)")
-    ap.add_argument("--ledger", default=None,
-                    help="append-only per-call spend log (default: <out>.ledger.jsonl)")
     args = ap.parse_args(argv)
 
     for stream in (sys.stdout, sys.stderr):
@@ -195,14 +204,14 @@ async def main(argv: list[str] | None = None) -> int:
         extra[key] = int(value) if value.isdigit() else value
     from codepilot.llm import Ledger, LLMClient
 
-    ledger_path = Path(args.ledger) if args.ledger else out.with_suffix(".ledger.jsonl")
+    ledger_file = ledger_path(out)
     client = LLMClient(model=args.model, api_base=args.api_base, extra=extra,
-                       ledger=Ledger(ledger_path), max_total_usd=args.max_total_usd,
+                       ledger=Ledger(ledger_file), max_total_usd=args.max_total_usd,
                        response_cache=args.response_cache)
     if args.max_total_usd is not None:
         print(f"spend cap ${args.max_total_usd:.2f}; already in the ledger "
               f"${client.total_spent_usd():.4f}")
-    print(f"every model call is appended to {ledger_path}")
+    print(f"every model request is appended to {ledger_file}")
     print(f"{len(instances)} instance(s) x arms {args.arms} -> {out}")
     if model_arms:
         from codepilot.bench.harness import cache_prefix_report
