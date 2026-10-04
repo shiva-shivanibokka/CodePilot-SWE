@@ -3,7 +3,7 @@
 The decisions that shape this repository, and why. Sections 1–5 are folded
 from CodePilot-Agent's design spec
 (`docs/superpowers/specs/2026-09-01-codepilot-agent-design.md`, removed in the
-merge; `git show 83d06d8:docs/superpowers/specs/2026-09-01-codepilot-agent-design.md`
+merge; `git show de59445:docs/superpowers/specs/2026-09-01-codepilot-agent-design.md`
 for the original, including its milestone plan). Section 6 is the merge.
 Where the merge overturned a decision, the original is kept and marked.
 

@@ -6,7 +6,7 @@ changed, why, the evidence, and what was preserved. Entries are in the order
 the work was done; later entries can revise earlier ones and say so.
 
 Conventions: `A:` and `B:` paths refer to the source repositories at the
-commits that were imported (A `88a836f`, B `9fd0895`). Plain paths refer to
+commits that were imported (A `88a836f`, B `53a6011`). Plain paths refer to
 this repository.
 
 Baselines measured before any change, on this machine (Windows 11, Python
@@ -201,12 +201,12 @@ restrict the tool set (edit-style, retrieval) are unaffected.
 
 Note on D8: the rewrite of `search_index.py` exceeds git's rename-similarity
 threshold, so `git log --follow codepilot/search_index.py` stops at the merge.
-The original is `swe/agent/tools/search.py` at commit `69fe4a9`.
+The original is `swe/agent/tools/search.py` at commit `07b171b`.
 
 ## D9. Benchmark grading: three leaks closed, each reproduced first
 
 All three were reproduced against B's code extracted unmodified from this
-repository's history (`git archive 9fd0895`) into a scratch directory, run
+repository's history (`git archive 53a6011`) into a scratch directory, run
 with `PYTHONDONTWRITEBYTECODE=1` so nothing was written beside it.
 
 1. **Clone-history leakage.** On a two-commit fixture (base, then the fix),
@@ -316,7 +316,7 @@ A's own sources right after the clone in D1).
 `swe/agentless/validate.py` removed and replaced by
 `codepilot/bench/selection.py`, which both arms use. `extract_json` moved
 verbatim from `B:agent/llm.py` to `codepilot/bench/agentless/jsonx.py`
-(diffed against `git show 9fd0895:agent/llm.py`: identical body).
+(diffed against `git show 53a6011:agent/llm.py`: identical body).
 
 **Compared, and what changed.**
 
@@ -446,7 +446,7 @@ reproduce, so it was left alone). `solve.py` always passes the path.
 ## D15. The rest of Autonomous-SWE-Agent: what was kept, moved, or dropped
 
 Every file under `swe/` after D1, with its fate. All of it remains readable in
-history (`git show 69fe4a9:swe/<path>`).
+history (`git show 07b171b:swe/<path>`).
 
 | B file(s) | fate | why / evidence |
 |---|---|---|
@@ -507,7 +507,7 @@ evaluation honesty rules) and planning scaffolding (status line, milestones,
 "executed as three plans"). The decisions are in `docs/DESIGN.md` §1–5, with
 ADR-2 (Anthropic only) marked superseded by D2; the milestones and the
 module-by-module "what survives from the old code" table are history and stay
-in git (`git show 83d06d8:docs/superpowers/specs/2026-09-01-codepilot-agent-design.md`).
+in git (`git show de59445:docs/superpowers/specs/2026-09-01-codepilot-agent-design.md`).
 
 **README.** Rewritten. Every number in it was rechecked against the committed
 files: the experiment table is recomputed from each results file's `summary`
@@ -1133,7 +1133,7 @@ pulls with `docker pull`, which shows the size.
 ## D42. Hygiene from the review
 
 * **D15's test list was incomplete.** The complete fate of every test in
-  Autonomous-SWE-Agent's suite (`git show 9fd0895:tests/<file>`):
+  Autonomous-SWE-Agent's suite (`git show 53a6011:tests/<file>`):
   - `test_providers.py`: `TestRegistry`, `TestLitellmModel`,
     `TestProvidersPayload`, `TestToOpenAITools` → `tests/test_providers.py`;
     `TestAssistantMessage` → covered by
@@ -1304,10 +1304,53 @@ Each was reproduced by a failing test before anything was changed.
      `tests/test_bench_instances.py::test_no_sampled_instance_appears_in_a_committed_result`
      keeps that true.
 
-**Noted, not acted on.** One home-directory path survives in history inside
-`bench/results/autonomous-swe-agent-recordings/sympy__sympy-18199.agentless.json`
-at commit `f66470b`; HEAD is clean (D42 redacted it). History is not rewritten
-here — the coordinator handles that.
+**Done, not pending — the history was rewritten after this entry was written.**
+`main` was rewritten with `git filter-branch --tree-filter`, applying the same
+`<HOME>` placeholder substitution that D42 applied at the tip to **every**
+commit. The rewrite is 1:1 — 96 commits before, 96 after, subjects unchanged —
+and the tip's tree is byte-identical to the pre-rewrite tip
+(`git rev-parse HEAD^{tree}` and `git rev-parse backup/pre-filter-codepilot^{tree}`
+both give `b199bd6c8dae7feda6d5b3f9ea8450fef5646519`; `git diff --stat` between
+them is empty). The commits that carried the path therefore have new hashes, and
+the hashes cited in this document were remapped by matching subjects.
+
+Verified here, commit by commit over all 96 commits on `main`:
+
+* **No home-directory path survives in any commit's tracked content.**
+  `git grep -I -i` for `C:\Users\<user>` / `C:/Users/<user>` over every commit on
+  `main` returns nothing. The same scan over `backup/pre-filter-codepilot`
+  returns **47** commits — not the one this entry originally named — which is
+  both the positive control that the scan works and the reason a tip-only
+  redaction was not enough.
+* **Every `AppData` match that remains is already a placeholder or an
+  environment variable**, not a user name: `<HOME>\AppData\Local\Temp\...` in
+  the carried-over recordings and the harness-check rows, and `%LOCALAPPDATA%`
+  in `bench/STUDY_PLAN.md`, `codepilot/llm.py`, `tests/test_spend_gate.py` and
+  this file. There is no `OneDrive` match anywhere.
+* **The only `<user>` matches are benign and intentional.** At HEAD there is
+  exactly one: the needle in
+  `tests/test_bench_instances.py::test_committed_results_carry_no_personal_paths`,
+  the leak detector itself. In the historical commits it also appears in
+  `github_integration/pr_creator.py` as part of the **public** repository URL
+  `https://github.com/shiva-shivanibokka/Autonomous-SWE-Agent` in a generated pull-request
+  footer — a GitHub account name in a public link, not a machine path or a
+  credential.
+* **Commit messages are clean.** Across all 96 commits the only matches are the
+  literal `%LOCALAPPDATA%` in two messages.
+* **A backup of the pre-rewrite history exists locally** on the branch
+  `backup/pre-filter-codepilot`. It is local only, and it must not be pushed,
+  because 47 of its commits still carry the path.
+
+The superseded claim, kept for the record: this entry previously said that one
+home-directory path survived in history at `f66470b`, that HEAD was clean, and
+that history was not rewritten here. The first part undercounted (47 commits
+carried it, in six result files), and the rewrite has since happened.
+
+A note on how to check this, because the obvious check is wrong: `git cat-file
+-e <sha>` **succeeds for pre-rewrite SHAs** here, because
+`backup/pre-filter-codepilot` keeps the old objects reachable. Existence is
+therefore not a staleness test. The valid test is reachability from the branch
+tip: `git merge-base --is-ancestor <sha> HEAD`.
 
 **Open question for the coordinator, not decided here.** 10 of the 20 sampled
 instances (8 django, astropy, scikit-learn) are in the categories this plan
@@ -1439,3 +1482,37 @@ instances.
   when it was stopped, and its `config` row recorded
   `"max_total_usd": NaN`. The gate was the only thing between a malformed
   number and a paid run, and it was open.
+
+## D47. Documentation repaired after the history rewrite
+
+Documentation only. No code, data, results or configuration changed.
+
+**Hashes.** The `main` rewrite described in D45 changed the hashes of every
+commit it touched, so four of the commit hashes cited in these documents no
+longer existed on the branch. Each was remapped to the rewritten commit with
+the identical subject, and the remapping was verified both ways
+(`git cat-file -e <new>^{commit}` and `git merge-base --is-ancestor <new> HEAD`):
+
+| Cited before | Now | Subject |
+|---|---|---|
+| `69fe4a9` | `07b171b` | Move Autonomous-SWE-Agent under swe/ ahead of the merge |
+| `83d06d8` | `de59445` | Move CodePilot's task suite into the bench package, and grade it clean |
+| `9fd0895` | `53a6011` | Show the other arm's result beside the run being watched |
+| `f66470b` | `40b230c` | One paid run at a time, reserved atomically against a user-level ledger |
+
+Every `git show <sha>:<path>` citation was re-checked against the new hash; all
+four paths still resolve. `88a836f` and `d419647` were **already valid** — the
+rewrite did not reach them — and the hashes `2def69f`, `9911b2d`, `a5f80a6`,
+`b3253c4`, `bfd20e8` and `dd0b757` are deliberately **not** remapped, because
+they name commits in the separate Autonomous-SWE-Agent worktree (D44, D19) and
+not in this repository.
+
+`f66470b` is still named once, in D45, as the pre-rewrite hash it was — that
+reference is about the old history and is correct as written.
+
+**Position.** D45's "Noted, not acted on" paragraph was rewritten to state only
+what was verified commit by commit over all 96 commits on `main`, including the
+count the original undercounted (47 pre-rewrite commits carried the path, not
+one) and the two benign `<user>` matches that remain. It also records that
+`git cat-file -e` is not a valid staleness check while
+`backup/pre-filter-codepilot` keeps the old objects reachable.
