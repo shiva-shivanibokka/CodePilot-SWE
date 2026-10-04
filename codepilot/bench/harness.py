@@ -136,6 +136,35 @@ class InstanceResult:
 # ---------------------------------------------------------------------------
 
 
+def cache_prefix_report(model: str) -> dict:
+    """Whether each arm's fixed prefix can be cached on `model` (D34).
+
+    Estimates are LiteLLM's token counter (a generic tokenizer), so they are
+    approximate; the minimum is Anthropic's published one.
+    """
+    from codepilot.bench.prompts import LOCALIZE_ARM, REPAIR_ARM
+    from codepilot.llm import _litellm, cache_minimum, to_openai_tools
+    from codepilot.tools import schemas
+
+    minimum = cache_minimum(model)
+    report: dict = {"model": model, "minimum_cacheable_tokens": minimum, "prefixes": {}}
+    for name, text, tools in (
+        ("agent", SHARED_BASE + "\n" + AGENT_ARM, to_openai_tools(schemas())),
+        ("agentless_localize", SHARED_BASE + "\n" + LOCALIZE_ARM, None),
+        ("agentless_repair", SHARED_BASE + "\n" + REPAIR_ARM, None),
+    ):
+        try:
+            tokens = _litellm().token_counter(
+                model=model, messages=[{"role": "system", "content": text}], tools=tools)
+        except Exception:  # noqa: BLE001 - estimate unavailable
+            tokens = None
+        report["prefixes"][name] = {
+            "estimated_tokens": tokens,
+            "caches_on_its_own": None if (minimum is None or tokens is None) else tokens >= minimum,
+        }
+    return report
+
+
 def tag_of(events: EventStream) -> str:
     return events.session_id
 

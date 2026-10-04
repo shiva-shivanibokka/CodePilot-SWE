@@ -853,3 +853,42 @@ written atomically (temp file, then rename). Test:
 
 Caveat: a cached reply replays one sample. Use a fresh cache directory for an
 independent repeat.
+
+## D34. A rolling cache breakpoint on the latest message, and a prefix-size check
+
+**Reproduced first.** Only the system prompt carried `cache_control`. The
+minimum cacheable prefix on claude-haiku-4-5 is **4,096 tokens** (claude-api
+reference, prompt-caching API table: Opus 4.5/4.6 and Haiku 4.5 at 4,096;
+Opus 5/5.5, Sonnet 5.5 and Fable at 512; Sonnet 5 and 4.x at 1,024), and the
+agent arm's system prompt plus 11 tool schemas is ~1,233 tokens by LiteLLM's
+generic counter (Ollama counted 1,658-1,938 for the same text with an issue
+attached, D22). So on Haiku nothing was ever cached and every turn paid the
+whole growing history at the full input price.
+`tests/test_llm.py::test_the_latest_message_carries_a_cache_breakpoint_on_anthropic`
+failed first.
+
+**Fix.** For Anthropic only, `mark_latest_for_cache` puts a breakpoint on the
+last block of the latest message of every request — both arms, since it lives
+in the client. Each request writes the conversation so far; the next one
+reads it back once it passes the model's minimum. Two breakpoints per
+request (system + latest), of the four allowed. Checked through LiteLLM's own
+Anthropic transform offline: the marker lands on the tool-result's text block
+and on a user text block.
+
+**Prefix check.** `codepilot.llm.cache_minimum(model)` and
+`codepilot.bench.harness.cache_prefix_report(model)`; `bench.run` prints the
+report and writes it into a `config` row at the top of the results file,
+with every cap. Result for the planned model:
+
+| prefix (LiteLLM estimate) | tokens | caches on its own on claude-haiku-4-5 (min 4,096)? | on claude-opus-5-5 (min 512)? |
+|---|---:|---|---|
+| agent: system + tools | ~1,233 | no | yes |
+| agentless localise: system | ~279 | no | no |
+| agentless repair: system | ~313 | no | no |
+
+So on Haiku caching comes only from the rolling breakpoint, for an agent
+conversation once it passes ~4k tokens, and for an agentless repair prompt
+(issue + whole file) when that alone passes 4k, which lets samples 2..N of the
+same file read it back. That asymmetry follows from the prompts' shapes, not
+from a different caching rule, and is stated in the study plan.
+`test_the_prefix_report_says_haiku_cannot_cache_the_system_prompt_alone`.

@@ -149,6 +149,43 @@ LOCAL_PROVIDERS = {"ollama", "ollama_chat"}
 EXPLICIT_CACHE_PROVIDERS = {"anthropic"}
 
 
+#: Minimum cacheable prefix in tokens (claude-api reference, prompt-caching
+#: API table). A shorter prefix silently does not cache.
+_CACHE_MINIMUMS = [
+    (re.compile(r"claude-(opus-5|fable-5|mythos-5|sonnet-5-5)"), 512),
+    (re.compile(r"claude-(opus-4-8|sonnet-5|sonnet-4-[56]|opus-4-1|opus-4-2|sonnet-4-2|opus-4(?!-\d)|sonnet-4(?!-\d))"), 1024),
+    (re.compile(r"claude-(opus-4-7|3-5-haiku|haiku-3-5)"), 2048),
+    (re.compile(r"claude-(opus-4-[56]|haiku-4-5)"), 4096),
+]
+
+
+def cache_minimum(model: str) -> int | None:
+    """The smallest prefix the model will cache, or None if not Anthropic."""
+    if "claude" not in model:
+        return None
+    for pattern, minimum in _CACHE_MINIMUMS:
+        if pattern.search(model):
+            return minimum
+    return None
+
+
+def mark_latest_for_cache(wire: list[dict[str, Any]]) -> None:
+    """Put a cache breakpoint on the last block of the latest message (D34).
+
+    A rolling breakpoint: each request caches the conversation so far, and the
+    next reads it back. With the system breakpoint that is two of the four
+    Anthropic allows. Applied to every request of every arm alike.
+    """
+    if not wire:
+        return
+    last = wire[-1]
+    content = last.get("content")
+    if isinstance(content, str) and content:
+        last["content"] = [{"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}]
+    elif isinstance(content, list) and content and isinstance(content[-1], dict):
+        content[-1] = {**content[-1], "cache_control": {"type": "ephemeral"}}
+
+
 def provider_of(model: str) -> str:
     """The LiteLLM provider a model string routes to, e.g. 'groq'."""
     try:
@@ -748,6 +785,8 @@ class LLMClient:
             # Thinking blocks are bound to the Anthropic model that wrote them.
             for m in wire:
                 m.pop("thinking_blocks", None)
+        else:
+            mark_latest_for_cache(wire)
         sys_msg = to_openai_system(system, keep_cache_control=keep)
         if sys_msg is not None:
             wire = [sys_msg, *wire]

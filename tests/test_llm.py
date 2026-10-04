@@ -6,6 +6,7 @@ was sent and replies with a hand-built response.
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import litellm
@@ -488,3 +489,49 @@ async def test_a_rerun_is_served_from_the_response_cache_and_not_paid_twice(wire
     # A different attempt of the same request is a different sample, not a copy.
     await again.chat(msgs, max_tokens=10, cache_tag="i:agent:1")
     assert len(sent) == 2
+
+
+# --------------------------------------------- rolling cache breakpoint (D34)
+#
+# Reproduced: only the system prompt carried a breakpoint. On claude-haiku-4-5
+# the minimum cacheable prefix is 4,096 tokens and the agent's system prompt
+# plus tool schemas is about 1,700-1,900 (measured by Ollama for the same text,
+# D22), so nothing was ever cached and the whole growing history was paid in
+# full on every turn.
+
+
+async def test_the_latest_message_carries_a_cache_breakpoint_on_anthropic(wire):
+    sent, replies = wire
+    replies += [response(text="a"), response(text="b")]
+    convo = Conversation(system_prompt="SYS")
+    convo.user("fix it")
+    convo.assistant([{"type": "tool_use", "id": "t1", "name": "list_files", "input": {}}])
+    convo.tool_results([Conversation.tool_result("t1", "a.py")])
+    await LLMClient(model="claude-haiku-4-5").chat(convo.messages, system=convo.system_blocks(), max_tokens=10)
+    last = sent[0]["messages"][-1]
+    assert last["role"] == "tool"
+    assert last["content"][-1]["cache_control"] == {"type": "ephemeral"}
+    breakpoints = json.dumps(sent[0]).count('"cache_control"')
+    assert breakpoints == 2, "system + latest message; Anthropic allows at most 4"
+
+    await LLMClient(model="groq/llama-3.3-70b-versatile").chat(convo.messages, system=convo.system_blocks(), max_tokens=10)
+    assert "cache_control" not in json.dumps(sent[1])
+
+
+def test_the_minimum_cacheable_prefix_is_known_per_model():
+    from codepilot.llm import cache_minimum
+
+    assert cache_minimum("claude-haiku-4-5-20251001") == 4096
+    assert cache_minimum("claude-opus-5-5") == 512
+    assert cache_minimum("claude-sonnet-5") == 1024
+    assert cache_minimum("claude-opus-4-5") == 4096, "opus-4 must not swallow opus-4-5"
+    assert cache_minimum("groq/llama-3.3-70b-versatile") is None
+
+
+def test_the_prefix_report_says_haiku_cannot_cache_the_system_prompt_alone():
+    from codepilot.bench.harness import cache_prefix_report
+
+    report = cache_prefix_report("claude-haiku-4-5")
+    assert report["minimum_cacheable_tokens"] == 4096
+    assert report["prefixes"]["agent"]["caches_on_its_own"] is False
+    assert cache_prefix_report("claude-opus-5-5")["prefixes"]["agent"]["caches_on_its_own"] is True

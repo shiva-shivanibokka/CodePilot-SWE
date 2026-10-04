@@ -203,6 +203,20 @@ async def main(argv: list[str] | None = None) -> int:
               f"${client.total_spent_usd():.4f}")
     print(f"every model call is appended to {ledger_path}")
     print(f"{len(instances)} instance(s) x arms {args.arms} -> {out}")
+    if model_arms:
+        from codepilot.bench.harness import cache_prefix_report
+
+        prefix = cache_prefix_report(args.model)
+        for name, p in prefix["prefixes"].items():
+            print(f"  cache: {name} prefix ~{p['estimated_tokens']} tokens; "
+                  f"{args.model} caches from {prefix['minimum_cacheable_tokens']}; "
+                  f"on its own: {p['caches_on_its_own']}")
+        write({"arm": "config", "model": args.model, "arms": model_arms, "attempts": args.attempts,
+               "seed": args.seed, "backend": args.backend, "image": args.image,
+               "max_total_usd": args.max_total_usd, "max_cost_per_attempt": args.max_cost,
+               "max_calls": args.max_calls, "max_tokens": args.max_tokens,
+               "max_output_tokens": args.max_output_tokens, "instances": [i["instance_id"] for i in instances],
+               "cache_prefix": prefix, "timestamp": datetime.now(UTC).isoformat()})
     for n, inst in enumerate(instances, 1):
         iid = inst["instance_id"]
         setup = setups.get(iid)
