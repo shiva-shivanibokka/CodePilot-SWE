@@ -918,3 +918,18 @@ hundreds of real site-packages entries and is stable when nothing changed.
 **Arm order.** Shuffled per instance with `random.Random(f"{seed}:{instance_id}")`,
 recorded in each row (`arm_order`), so neither arm systematically runs first
 on a freshly built environment. `test_arm_order_is_randomised_per_instance_and_recorded`.
+
+## D36. The shared prompt no longer claims "no network access"
+
+`SHARED_BASE` told every arm the checkout had "no network access". On the
+Docker backend that is true (the container is taken off every network before
+the first command, D10); on the local backend it is false — commands run on
+the host. A prompt that lies about the environment on one backend is a
+confound between backends. Reproduced as
+`tests/test_bench_e2e.py::test_the_shared_prompt_makes_no_claim_the_local_backend_breaks`.
+The sentence is replaced by an instruction that holds on both ("Do not try to
+download anything: work with what is installed"). The paid study uses the
+Docker backend with official images, where the absence of a network is
+enforced rather than asserted (STUDY_PLAN.md). Changing `SHARED_BASE` changes
+every arm's prompt identically; the smoke rows were produced with the old
+sentence.

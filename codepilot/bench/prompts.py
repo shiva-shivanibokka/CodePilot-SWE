@@ -31,7 +31,7 @@ from __future__ import annotations
 SHARED_BASE = """\
 You are resolving a real GitHub issue in a Python repository. The repository is
 checked out at the commit just before the issue was fixed, with no history
-beyond that commit and no network access.
+beyond that commit. Do not try to download anything: work with what is installed.
 
 Your change will be judged by tests you cannot see. Before they run, every
 change you made to test files, conftest.py or pytest configuration is thrown

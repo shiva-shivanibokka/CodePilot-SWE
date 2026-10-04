@@ -370,3 +370,12 @@ async def test_the_fingerprint_really_sees_the_installed_packages(tmp_path):
         assert await env.fingerprint() == prints, "nothing changed, nothing flagged"
     finally:
         await env.close()
+
+
+def test_the_shared_prompt_makes_no_claim_the_local_backend_breaks():
+    """D36: SHARED_BASE told the model it had no network access. True on the
+    Docker backend (the container is disconnected before the first command),
+    false on the local one, where commands run on the host with its network."""
+    from codepilot.bench.prompts import SHARED_BASE
+
+    assert "network" not in SHARED_BASE.lower()
