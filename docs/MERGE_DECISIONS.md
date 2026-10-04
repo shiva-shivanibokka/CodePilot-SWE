@@ -835,3 +835,21 @@ counted 10 COST events for 13 model calls. Now `compact` leaves its reply on
 `COST` event with `purpose="compaction"`. In the benchmark the spend also
 reaches the row and the ledger through the client (D27), and the run-wide cap
 (D28) checks it before it is made.
+
+## D33. A response cache, so a rerun does not pay twice
+
+`LLMClient(response_cache=dir)` (`bench.run --response-cache`). The key is a
+SHA-256 of the full request (model, messages, tools, max_tokens, sampling
+parameters actually sent, provider options) plus a caller tag; the agent tags
+each attempt (`<instance>:<arm>:attempt-<k>`) and agentless each localisation
+and sample, so two attempts that send byte-identical requests — which happens
+on providers that take no seed — stay two samples instead of one replayed
+twice. A hit costs nothing: it is ledgered with `cached: true` and `$0`, and
+keeps the original usage so token measurements still hold. Entries are
+written atomically (temp file, then rename). Test:
+`tests/test_llm.py::test_a_rerun_is_served_from_the_response_cache_and_not_paid_twice`
+(failed first: no such option). The default `--out`, its ledger and
+`bench/.cache/` are gitignored.
+
+Caveat: a cached reply replays one sample. Use a fresh cache directory for an
+independent repeat.

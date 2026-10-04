@@ -464,3 +464,27 @@ def test_litellm_puts_echoed_thinking_ahead_of_the_tool_call_in_the_anthropic_bo
     assistant = [m for m in body["messages"] if m["role"] == "assistant"][0]
     assert [b["type"] for b in assistant["content"]] == ["thinking", "tool_use"]
     assert assistant["content"][0]["signature"] == "sig"
+
+
+# ---------------------------------------------------- response cache (D33)
+
+
+async def test_a_rerun_is_served_from_the_response_cache_and_not_paid_twice(wire, tmp_path):
+    from codepilot.llm import Ledger
+
+    sent, replies = wire
+    replies += [response(text="first", prompt=1000, completion=10), response(text="other")]
+    ledger = Ledger(tmp_path / "l.jsonl")
+    msgs = [{"role": "user", "content": "hi"}]
+
+    one = LLMClient(model="claude-haiku-4-5", response_cache=tmp_path / "cache", ledger=ledger)
+    first = await one.chat(msgs, max_tokens=10, cache_tag="i:agent:0")
+    again = LLMClient(model="claude-haiku-4-5", response_cache=tmp_path / "cache", ledger=ledger)
+    second = await again.chat(msgs, max_tokens=10, cache_tag="i:agent:0")
+    assert len(sent) == 1, "the rerun must not reach the provider"
+    assert second.text == first.text and second.cost_usd == 0.0
+    assert ledger.rows()[-1]["cached"] is True and ledger.rows()[-1]["cost_usd"] == 0.0
+
+    # A different attempt of the same request is a different sample, not a copy.
+    await again.chat(msgs, max_tokens=10, cache_tag="i:agent:1")
+    assert len(sent) == 2

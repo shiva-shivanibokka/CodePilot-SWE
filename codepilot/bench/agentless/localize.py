@@ -81,6 +81,7 @@ async def localize(client, model: str | None, root, files: list[str], issue: str
         max_tokens=2048,
         temperature=0.2,
         **({"seed": seed} if seed is not None else {}),
+        cache_tag="agentless:localize",
     )
     try:
         parsed = extract_json(reply.text, expect=dict)

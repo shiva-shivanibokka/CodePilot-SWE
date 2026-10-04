@@ -114,7 +114,7 @@ async def repair(client, model: str | None, root, issue: str, loc: LocalizationR
         )
         try:
             reply = await _ask(client, model, prompt, temperature, SAMPLE_MAX_TOKENS, result,
-                               sample_seed)
+                               sample_seed, f"sample-{index}")
         except LLMError as exc:
             if "context overflow" not in str(exc):
                 raise
@@ -128,7 +128,7 @@ async def repair(client, model: str | None, root, issue: str, loc: LocalizationR
             # it buys nothing.
             try:
                 reply = await _ask(client, model, prompt, temperature, SAMPLE_MAX_TOKENS * 2,
-                                   result, sample_seed)
+                                   result, sample_seed, f"sample-{index}-reask")
             except LLMError as exc:
                 if "context overflow" not in str(exc):
                     raise
@@ -140,7 +140,8 @@ async def repair(client, model: str | None, root, issue: str, loc: LocalizationR
     return result
 
 
-async def _ask(client, model, prompt, temperature, max_tokens, result: RepairResult, seed=None):
+async def _ask(client, model, prompt, temperature, max_tokens, result: RepairResult, seed=None,
+               tag: str = ""):
     reply = await client.chat(
         [{"role": "user", "content": prompt}],
         system=system(REPAIR_ARM),
@@ -148,6 +149,7 @@ async def _ask(client, model, prompt, temperature, max_tokens, result: RepairRes
         max_tokens=max_tokens,
         temperature=temperature,
         **({"seed": seed} if seed is not None else {}),
+        cache_tag=f"agentless:{tag}",
     )
     result.usage = result.usage + reply.usage
     result.calls += 1

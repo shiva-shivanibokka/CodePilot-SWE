@@ -23,3 +23,8 @@ PLAN.md
 .idea/
 .DS_Store
 Thumbs.db
+
+# Benchmark scratch: the default --out, its ledger, and the response cache
+bench/results/run.jsonl
+bench/results/run.ledger.jsonl
+bench/.cache/

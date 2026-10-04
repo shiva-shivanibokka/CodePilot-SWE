@@ -149,6 +149,8 @@ async def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-total-usd", type=float, default=None, dest="max_total_usd",
                     help="hard cap on the whole run's spend, both arms, at list price; "
                          "includes what the ledger already records (D28)")
+    ap.add_argument("--response-cache", default=None, dest="response_cache",
+                    help="directory of stored replies; a rerun is served from it at $0 (D33)")
     ap.add_argument("--ledger", default=None,
                     help="append-only per-call spend log (default: <out>.ledger.jsonl)")
     args = ap.parse_args(argv)
@@ -194,7 +196,8 @@ async def main(argv: list[str] | None = None) -> int:
 
     ledger_path = Path(args.ledger) if args.ledger else out.with_suffix(".ledger.jsonl")
     client = LLMClient(model=args.model, api_base=args.api_base, extra=extra,
-                       ledger=Ledger(ledger_path), max_total_usd=args.max_total_usd)
+                       ledger=Ledger(ledger_path), max_total_usd=args.max_total_usd,
+                       response_cache=args.response_cache)
     if args.max_total_usd is not None:
         print(f"spend cap ${args.max_total_usd:.2f}; already in the ledger "
               f"${client.total_spent_usd():.4f}")

@@ -672,8 +672,12 @@ class LLMClient:
         extra: dict[str, Any] | None = None,
         ledger: Ledger | None = None,
         max_total_usd: float | None = None,
+        response_cache: Path | str | None = None,
     ) -> None:
         self.model = model
+        #: Directory of stored replies keyed by (model, request hash, tag), so
+        #: re-running a benchmark does not pay twice for identical requests.
+        self.response_cache = Path(response_cache) if response_cache else None
         #: Hard ceiling on everything this client spends, both benchmark arms
         #: and compaction included, plus whatever the ledger already holds
         #: from earlier runs. Checked before every request (D28).
@@ -806,6 +810,7 @@ class LLMClient:
         thinking: bool = False,
         temperature: float | None = None,
         seed: int | None = None,
+        cache_tag: str = "",
     ) -> Reply:
         litellm = _litellm()
         model = model or self.model
@@ -821,6 +826,11 @@ class LLMClient:
         )
 
         self._check_fits(params, max_tokens)
+
+        key = self._cache_key(params, cache_tag)
+        cached = self._cache_get(key, model)
+        if cached is not None:
+            return cached
 
         attempt = 0
         while True:
@@ -871,13 +881,70 @@ class LLMClient:
         reply.cost_usd = cost_of(model, reply.usage)
         reply.omitted_params = list(getattr(self, "_omitted", []))
         self._record(model, reply=reply)
+        self._cache_put(key, reply)
         return reply
 
-    def _record(self, model: str, *, reply: Reply | None = None, error: BaseException | None = None) -> None:
+    # ------------------------------------------------------- response cache
+
+    @staticmethod
+    def _cache_key(params: dict[str, Any], cache_tag: str) -> str:
+        """Hash of everything that decides the reply, plus the caller's tag.
+
+        The tag is what keeps attempt 2 from replaying attempt 1 when the
+        provider takes no seed and the requests are otherwise identical.
+        """
+        import hashlib
+
+        material = {k: v for k, v in params.items() if k not in ("api_key", "timeout")}
+        material["_tag"] = cache_tag
+        return hashlib.sha256(json.dumps(material, sort_keys=True, default=str).encode()).hexdigest()
+
+    def _cache_path(self, key: str) -> Path | None:
+        return None if self.response_cache is None else self.response_cache / f"{key}.json"
+
+    def _cache_get(self, key: str, model: str) -> Reply | None:
+        path = self._cache_path(key)
+        if path is None or not path.is_file():
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        reply = Reply(
+            text=data["text"],
+            content=data["content"],
+            tool_calls=[ToolCall(**c) for c in data["tool_calls"]],
+            stop_reason=data["stop_reason"],
+            model=data["model"],
+            usage=Usage(**data["usage"]),
+            latency_ms=0,
+            cost_usd=0.0,
+            omitted_params=data.get("omitted_params", []),
+        )
+        # Not billed: recorded at $0, flagged, with the original usage kept so
+        # token measurements still mean something.
+        self._record(model, reply=reply, cached=True)
+        return reply
+
+    def _cache_put(self, key: str, reply: Reply) -> None:
+        path = self._cache_path(key)
+        if path is None:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "text": reply.text, "content": reply.content,
+            "tool_calls": [vars(c) for c in reply.tool_calls],
+            "stop_reason": reply.stop_reason, "model": reply.model,
+            "usage": vars(reply.usage), "omitted_params": reply.omitted_params,
+            "original_cost_usd": reply.cost_usd,
+        }
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, default=str), encoding="utf-8")
+        tmp.replace(path)
+
+    def _record(self, model: str, *, reply: Reply | None = None, error: BaseException | None = None,
+                cached: bool = False) -> None:
         """Account for one call, in memory and in the ledger, immediately."""
         spend = self._spend.setdefault(self.tag, TagSpend())
         row: dict[str, Any] = {
-            "at": time.time(), "tag": self.tag, "model": model,
+            "at": time.time(), "tag": self.tag, "model": model, "cached": cached,
         }
         if reply is not None:
             spend.usage = spend.usage + reply.usage

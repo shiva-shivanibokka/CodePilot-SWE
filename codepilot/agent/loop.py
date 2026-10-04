@@ -54,6 +54,7 @@ class AgentLoop:
         temperature: float | None = None,
         seed: int | None = None,
         max_tokens: int = 8192,
+        cache_tag: str = "",
     ) -> None:
         self.client = client
         self.ctx = ctx
@@ -68,6 +69,8 @@ class AgentLoop:
         self.temperature = temperature
         self.seed = seed
         self.max_tokens = max_tokens
+        #: Passed to the client's response cache (D33): distinguishes attempts.
+        self.cache_tag = cache_tag
 
     async def run(self, task: str) -> TurnResult:
         events = self.ctx.events
@@ -142,6 +145,7 @@ class AgentLoop:
                 **({"temperature": self.temperature} if self.temperature is not None else {}),
                 **({"seed": self.seed} if self.seed is not None else {}),
                 **({"max_tokens": self.max_tokens} if self.max_tokens != 8192 else {}),
+                **({"cache_tag": self.cache_tag} if self.cache_tag else {}),
             )
             steps += 1
             self.budget.record(

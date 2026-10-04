@@ -136,6 +136,10 @@ class InstanceResult:
 # ---------------------------------------------------------------------------
 
 
+def tag_of(events: EventStream) -> str:
+    return events.session_id
+
+
 def transcript_of(events: EventStream, limit: int = 300) -> list[dict]:
     """The agent's events as a short, committed-to-disk-sized record."""
     out: list[dict] = []
@@ -177,6 +181,7 @@ async def agent_attempt(env: BenchEnv, client, cfg: ArmConfig, issue: str, attem
         temperature=0.2 if attempt == 0 else 1.0,
         seed=None if cfg.seed is None else cfg.seed * 1000 + attempt,
         max_tokens=cfg.max_output_tokens,
+        cache_tag=f"{tag_of(events)}:attempt-{attempt}",
     )
     before = len(events.events)
     stopped_by, error = "error", None
