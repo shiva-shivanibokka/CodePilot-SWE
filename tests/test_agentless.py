@@ -156,3 +156,67 @@ async def test_a_truncated_sample_is_asked_again_with_twice_the_room(tmp_path):
     assert asked == [SAMPLE_MAX_TOKENS, SAMPLE_MAX_TOKENS * 2]
     assert result.retried == 1 and result.calls == 2
     assert result.samples[0].patched is not None and "a + b" in result.samples[0].patched
+
+
+async def test_the_sample_budget_follows_the_output_cap_both_arms_are_given(tmp_path):
+    """C2/D45: --max-output-tokens governed the agent only, so the agentless
+    arm sampled at a hardcoded 4,096 while the agent had 2,048. The flag now
+    sets both; only agentless re-asks, at double its own budget."""
+    import json
+
+    from codepilot.bench.agentless.localize import LocalizationResult
+    from codepilot.bench.agentless.repair import repair
+    from codepilot.llm import Reply, Usage
+
+    (tmp_path / "calc.py").write_text("def add(a, b):\n    return a - b\n", encoding="utf-8")
+    asked = []
+
+    class Model:
+        async def chat(self, messages, max_tokens=None, **kw):
+            asked.append(max_tokens)
+            if len(asked) == 1:
+                return Reply('{"search": "ret', [], [], "max_tokens", "m", Usage(10, 10), 1, 0.001)
+            text = json.dumps({"explanation": "fix", "search": "return a - b", "replace": "return a + b"})
+            return Reply(text, [], [], "end_turn", "m", Usage(10, 10), 1, 0.001)
+
+    loc = LocalizationResult(suspect_files=["calc.py"], suspect_locations=[], repo_map="")
+    await repair(Model(), "m", tmp_path, "add subtracts", loc, num_samples=1,
+                 max_output_tokens=2048)
+    assert asked == [2048, 4096]
+
+
+async def test_the_arm_config_output_cap_reaches_the_agentless_sampler(monkeypatch):
+    """The flag must arrive through the pipeline, not stop at the agent."""
+    from codepilot.bench.agentless import pipeline
+    from codepilot.bench.harness import ArmConfig
+
+    seen = {}
+
+    async def fake_repair(client, model, root, issue, loc, num_samples, *, seed=None,
+                          max_output_tokens=None):
+        seen["max_output_tokens"] = max_output_tokens
+        from codepilot.bench.agentless.repair import RepairResult
+
+        return RepairResult(samples=[])
+
+    async def fake_localize(*a, **kw):
+        from codepilot.bench.agentless.localize import LocalizationResult
+
+        return LocalizationResult(suspect_files=[], suspect_locations=[], repo_map="")
+
+    monkeypatch.setattr(pipeline, "repair", fake_repair)
+    monkeypatch.setattr(pipeline, "localize", fake_localize)
+
+    class Env:
+        root = __import__("pathlib").Path(".")
+
+        def restore(self):
+            pass
+
+        def diff(self):
+            return ""
+
+    cfg = ArmConfig(model="m", max_output_tokens=4096)
+    await pipeline.run_agentless(Env(), object(), cfg.model, "issue", 1, seed=0,
+                                 max_output_tokens=cfg.max_output_tokens)
+    assert seen["max_output_tokens"] == 4096

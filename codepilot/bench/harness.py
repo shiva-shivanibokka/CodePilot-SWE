@@ -326,7 +326,9 @@ async def _run_arm(env: BenchEnv, instance: dict, arm: str, cfg: ArmConfig, clie
                     if infra:
                         break
         elif arm == "agentless":
-            run = await run_agentless(env, client, cfg.model, issue, cfg.attempts, seed=cfg.seed)
+            run = await run_agentless(env, client, cfg.model, issue, cfg.attempts,
+                                      seed=cfg.seed,
+                                      max_output_tokens=cfg.max_output_tokens)
             spend.usage = spend.usage + run.usage
             spend.cost_usd += run.cost_usd
             spend.calls += run.calls

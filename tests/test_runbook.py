@@ -154,3 +154,24 @@ def test_main_run_stops_at_its_cap(fakes, monkeypatch):
     rows = _rows(_out(main))
     assert rows[-1]["arm"] == "aborted"
     assert not runlock.lock_path().exists()
+
+
+def test_the_runbook_leaves_the_agent_room_to_compact():
+    """C1/D45: compaction fires above --compact-at, but a prompt over
+    --max-prompt-tokens is refused first, so a default --compact-at of 100k
+    with a 50k prompt bound killed every agent attempt that grew past 50k."""
+    for name in ("canary", "main"):
+        argv = argv_of(runbook()[name][0])
+        compact_at = int(argv[argv.index("--compact-at") + 1])
+        bound = int(argv[argv.index("--max-prompt-tokens") + 1])
+        assert compact_at < bound, f"{name}: compaction can never run"
+
+
+def test_the_runbook_gives_both_arms_the_same_output_budget():
+    """C2/D45: 2,048 for the agent against a hardcoded 4,096 for agentless."""
+    from codepilot.bench.agentless.repair import SAMPLE_MAX_TOKENS
+
+    for name in ("canary", "main", "dry-run"):
+        for cmd in runbook()[name]:
+            argv = argv_of(cmd)
+            assert int(argv[argv.index("--max-output-tokens") + 1]) == SAMPLE_MAX_TOKENS

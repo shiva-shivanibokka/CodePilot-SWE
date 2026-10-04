@@ -103,10 +103,17 @@ def test_the_worst_case_of_a_design_is_computed_from_the_caps():
     per_call_agent = 50_000 * 1.25e-6 + 2048 * 5e-6
     # A step can make a compaction call and a model call after one budget check.
     assert w["agent"] == pytest.approx(20 * (0.40 + 2 * per_call_agent))
-    # localise (2048 out) + one sample (4096) + its re-ask (8192), each with a full prompt
-    per_instance_agentless = sum(50_000 * 1.25e-6 + out * 5e-6 for out in (2048, 4096, 8192))
+    # localise (its own 2048 cap) + one sample at --max-output-tokens + its
+    # re-ask at double that, each with a full prompt (D45: the sample budget is
+    # no longer hardcoded, so the flag moves both arms).
+    per_instance_agentless = sum(50_000 * 1.25e-6 + out * 5e-6 for out in (2048, 2048, 4096))
     assert w["agentless"] == pytest.approx(20 * per_instance_agentless)
     assert w["total"] == pytest.approx(w["agent"] + w["agentless"])
+
+    wider = worst_case_design("claude-haiku-4-5", instances=20, seeds=1, attempts=1,
+                              arms=["agentless"], max_cost_per_attempt=0.40,
+                              max_prompt_tokens=50_000, max_output_tokens=4096)
+    assert wider["agentless"] > w["agentless"]
 
 
 def test_a_dry_run_refuses_a_design_whose_worst_case_exceeds_the_cap(capsys):

@@ -27,14 +27,14 @@ covers everything in the user-level ledger, the canary included (D41).
 | seeds | **1**. Anthropic takes no seed and Haiku does take temperature (D29), so a second seed would be a second sample, not a reproducible repeat |
 | arms, N | agent and agentless, **N = 1** each (no selection), arm order randomised per instance (D35) |
 | backend | Docker, official SWE-bench images (`--image official`): no network while the model acts, enforced (D10, D36) |
-| caps | $0.40 per agent attempt; 40 model calls per attempt; 50,000 prompt tokens per request (larger ones are refused as an arm failure, D39); 2,048 output tokens per agent call; $20 run-wide, reserved atomically before every request (D28, D38, D41) |
-| grading | in-repo clean-tree grader (D9); the official grader (D37) as a cross-check on the submitted patches |
+| caps | $0.40 per agent attempt; 40 model calls per attempt; 50,000 prompt tokens per request (larger ones are refused as an arm failure, D39); **4,096 output tokens per call in both arms** (`--max-output-tokens`, D45) — agentless alone re-asks once at double that when a reply is cut off mid-JSON, which an agent turn does not need because its next step continues; compaction at 35,000 prompt tokens, below the 50,000 bound, or the agent could never compact (D45); $20 run-wide, reserved atomically before every request (D28, D38, D41) |
+| grading | this repository's clean-tree grader (D9) **only**. `resolved` is this harness's verdict, not a SWE-bench-comparable number: no second grader has been run, so there is no grader-agreement evidence. `official_grader.py` (D37) needs the `swebench` package, which is not installed, and `swebench_compat.py` is an import stub for it, not a grader. Running it on the submitted patches is listed under "Not in this plan" (D45) |
 
 **Cost.** Expected, from the measured smoke tokens
 (`codepilot.bench.estimate --results bench/results/smoke/2026-10-02-qwen2.5-7b.jsonl --instances 20 --seeds 1 --attempts 1`):
 1.27M input + 0.05M output tokens = **$1.54** (x3 for harder instances:
 **$4.61**), with no cache discount assumed. **Worst case from the caps**
-(`--dry-run`, D39/D40): agent $10.91 + agentless $5.18 = **$16.09**, under the
+(`--dry-run`, D39/D40): agent $11.32 + agentless $5.18 = **$16.50**, under the
 $20 cap. On Haiku nothing under 4,096 tokens caches, so only the rolling
 breakpoint (D34) can save anything.
 
@@ -42,6 +42,14 @@ breakpoint (D34) can save anything.
 and one model can show whether the pipeline produces meaningful numbers and
 roughly where the arms stand; a 20-instance difference smaller than about 25
 points is not distinguishable, and the report must say so.
+
+### Why this sample cannot have been chosen to flatter the result
+
+`instances.sample(20, seed=0)` is deterministic over a frozen dataset whose
+sha256 is verified on load, at a pinned revision (D37), and **none of the 20
+instances appears in any result committed to this repository** — not the
+carried-over recordings, the harness check or the smoke run. The sample
+therefore provably predates any measurement on it.
 
 ### Caveats, known before spending
 
@@ -55,8 +63,17 @@ points is not distinguishable, and the report must say so.
 * **Agentless regression gate on Django** is skipped (D12); measuring it with
   Django's own runner and log parser (the SOP-eval worktree's approach, D37)
   is future work, listed below.
-* **LiteLLM's internal reconnect retry** can bill one request the ledger sees
-  once (D41); at most one extra call per occurrence, inside the margin.
+* **The $20 cap bounds RECORDED worst case, not the provider's bill** (D45).
+  Every request is reserved at its worst case before it is sent, so the
+  *ledger* can never pass $20 — but LiteLLM's transport-level reconnect can
+  bill a request the ledger records once (D41). In the expected case
+  (about $1.54) a few duplicates are noise; in the stated worst case the bill
+  would reach about **$33** if *every* call double-billed, which is over this
+  repository's $25 share though inside the $50 total. Earlier wording
+  ("inside the 20% margin") was true of the expected case only. Mitigation is
+  procedural: read the provider's own usage page after the canary and again
+  after the first few instances of the main run, and stop if billed spend
+  diverges from the ledger.
 * **Thinking and compaction are not exercised live** (D31): Haiku does not
   think unless asked, so the study does not depend on it.
 
@@ -85,8 +102,8 @@ python -m codepilot.bench.run --sample 20 --seed 0 --arms gold empty --backend d
 
 <!-- runbook:dry-run -->
 ```bash
-python -m codepilot.bench.run --instances pallets__flask-5063 --arms agent agentless --attempts 1 --seed 0 --model claude-haiku-4-5-20251001 --backend docker --image official --max-total-usd 1 --max-cost 0.40 --max-calls 40 --max-prompt-tokens 50000 --max-output-tokens 2048 --dry-run
-python -m codepilot.bench.run --sample 20 --seed 0 --arms agent agentless --attempts 1 --model claude-haiku-4-5-20251001 --backend docker --image official --max-total-usd 20 --max-cost 0.40 --max-calls 40 --max-prompt-tokens 50000 --max-output-tokens 2048 --dry-run
+python -m codepilot.bench.run --instances pallets__flask-5063 --arms agent agentless --attempts 1 --seed 0 --model claude-haiku-4-5-20251001 --backend docker --image official --max-total-usd 1 --max-cost 0.40 --max-calls 40 --max-prompt-tokens 50000 --max-output-tokens 4096 --compact-at 35000 --dry-run
+python -m codepilot.bench.run --sample 20 --seed 0 --arms agent agentless --attempts 1 --model claude-haiku-4-5-20251001 --backend docker --image official --max-total-usd 20 --max-cost 0.40 --max-calls 40 --max-prompt-tokens 50000 --max-output-tokens 4096 --compact-at 35000 --dry-run
 ```
 
 4. **Canary**: one instance, $1 cap. `pallets__flask-5063` is the sample's
@@ -95,7 +112,7 @@ python -m codepilot.bench.run --sample 20 --seed 0 --arms agent agentless --atte
 
 <!-- runbook:canary -->
 ```bash
-python -m codepilot.bench.run --instances pallets__flask-5063 --arms agent agentless --attempts 1 --seed 0 --model claude-haiku-4-5-20251001 --backend docker --image official --max-total-usd 1 --max-cost 0.40 --max-calls 40 --max-prompt-tokens 50000 --max-output-tokens 2048 --response-cache bench/.cache/responses --env-file .env --out bench/results/haiku-study/canary.jsonl
+python -m codepilot.bench.run --instances pallets__flask-5063 --arms agent agentless --attempts 1 --seed 0 --model claude-haiku-4-5-20251001 --backend docker --image official --max-total-usd 1 --max-cost 0.40 --max-calls 40 --max-prompt-tokens 50000 --max-output-tokens 4096 --compact-at 35000 --response-cache bench/.cache/responses --env-file .env --out bench/results/haiku-study/canary.jsonl
 ```
 
 5. **Main run**: the 20 instances (minus harness-check exclusions — pass
@@ -105,13 +122,13 @@ python -m codepilot.bench.run --instances pallets__flask-5063 --arms agent agent
 
 <!-- runbook:main -->
 ```bash
-python -m codepilot.bench.run --sample 20 --seed 0 --arms agent agentless --attempts 1 --model claude-haiku-4-5-20251001 --backend docker --image official --max-total-usd 20 --max-cost 0.40 --max-calls 40 --max-prompt-tokens 50000 --max-output-tokens 2048 --response-cache bench/.cache/responses --env-file .env --out bench/results/haiku-study/main.jsonl
+python -m codepilot.bench.run --sample 20 --seed 0 --arms agent agentless --attempts 1 --model claude-haiku-4-5-20251001 --backend docker --image official --max-total-usd 20 --max-cost 0.40 --max-calls 40 --max-prompt-tokens 50000 --max-output-tokens 4096 --compact-at 35000 --response-cache bench/.cache/responses --env-file .env --out bench/results/haiku-study/main.jsonl
 ```
 
 6. If a run dies and its lock stays behind: `python -m codepilot.bench.run
    --break-stale-lock` (removes it only if its process is gone). Unsettled
    requests stay charged at their worst case in the ledger
-   (`%LOCALAPPDATA%\sop_eval\codepilot_swe\ledger.sqlite`).
+   (`~/.sop_eval/codepilot_swe/ledger.sqlite`, which does not follow `%LOCALAPPDATA%`, D45).
 
 ## Design (full study, not funded)
 
@@ -270,6 +287,10 @@ then repeat on one Claude model if the first result is worth confirming.
 * Agentless's reproduction-test generation (the paper's strongest selection
   signal). Adding it is the natural next experiment; it would change only
   `selection.py`.
-* Running the official SWE-bench harness as a second grader. It is wired in
-  (`codepilot/bench/official_grader.py`, D37) but needs the `swebench` package,
-  which is not installed; run it on the funded study's submitted patches.
+* Running the official SWE-bench harness as a second grader, and so any
+  grader-agreement number. It is wired in
+  (`codepilot/bench/official_grader.py`, D37) but has never been run: the
+  `swebench` package is not installed and nothing in this repository calls it
+  (`swebench_compat.py` is an import stub for that package, not a grader).
+  Until it runs on the funded study's submitted patches, every `resolved`
+  figure here is this harness's own verdict.

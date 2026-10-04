@@ -110,3 +110,20 @@ def test_new_result_rows_have_the_home_directory_redacted():
     row = '{"log": "' + home.replace("\\", "\\\\") + '\\AppData\\x and ' + home.replace("\\", "/") + '/y"}'
     clean, _ = redact(row)
     assert Path.home().name not in clean and "<HOME>" in clean
+
+
+def test_no_sampled_instance_appears_in_a_committed_result():
+    """C5/D45: the funded study's sample provably predates any result on it, so
+    it cannot have been chosen to flatter one. Guard that it stays true."""
+    import pathlib
+
+    from codepilot.bench.instances import sample
+
+    ids = {r["instance_id"] for r in sample(20, 0)}
+    results = pathlib.Path(__file__).resolve().parents[1] / "bench" / "results"
+    committed = [p for p in results.rglob("*") if p.is_file()]
+    assert committed
+    for p in committed:
+        text = p.read_text(encoding="utf-8", errors="replace")
+        overlap = sorted(i for i in ids if i in text)
+        assert not overlap, f"{p.name} already holds a result for {overlap}"

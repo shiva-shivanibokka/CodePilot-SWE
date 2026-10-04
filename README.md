@@ -156,11 +156,14 @@ anything key-shaped redacted. A run the provider refused to serve is marked
 `--max-total-usd`, at most the project maximum of $20
 (`bench.run.PROJECT_MAX_USD`), and a published price — an unpriced model is
 refused. Every request is reserved at its worst-case cost in a user-level
-SQLite ledger (`%LOCALAPPDATA%\sop_eval\codepilot_swe\`) before it is sent,
+SQLite ledger (`~/.sop_eval/codepilot_swe/`) before it is sent,
 atomically against the cap, and settled to its real cost after; a request
 that dies mid-flight stays charged at its worst case. One retry at most;
 any other 4xx, or a reply from a different model than requested, aborts the
-run. Compaction calls count. One paid run at a time (a lock file with stale
+run. Compaction calls count. A cap that is not a positive, finite number of
+dollars is refused at the gate and again in the ledger — `nan` compares False
+against every bound, and once disabled the cap entirely. The cap bounds
+*recorded* worst case, not the provider's bill: see STUDY_PLAN.md's caveats. One paid run at a time (a lock file with stale
 recovery). `--dry-run` prints the design's worst case from its caps and
 refuses if it exceeds the cap; `--response-cache` replays identical requests
 for free.
@@ -246,7 +249,7 @@ before the committed rows (MERGE_DECISIONS D23, D24).
 
 Not run. Funded next: a first run of both arms on `claude-haiku-4-5-20251001`,
 20 random Lite instances, N = 1, under a $20 hard cap — expected about
-$1.54–$4.61, worst case from the caps $16.09 (`--dry-run`) — with its exact
+$1.54–$4.61, worst case from the caps $16.50 (`--dry-run`) — with its exact
 commands, which the test suite runs against a fake model
 (`tests/test_runbook.py`). The full design in
 [`bench/STUDY_PLAN.md`](bench/STUDY_PLAN.md) is not funded: 50 instances, 3 seeds,
@@ -313,7 +316,7 @@ times that if instances are harder and a stronger model works longer than the
 ## Development
 
 ```bash
-pytest -q          # 387 passed, 1 skipped (the opt-in Docker test); no key, no network
+pytest -q          # 412 passed, 1 skipped (the opt-in Docker test); no key, no network
 ruff check .
 python -m codepilot.doctor
 ```

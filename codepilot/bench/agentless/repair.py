@@ -28,7 +28,9 @@ from codepilot.bench.agentless.localize import LocalizationResult
 from codepilot.bench.prompts import REPAIR_ARM, issue_message, system
 from codepilot.llm import LLMError, Usage
 
-#: Room for one search/replace pair. Doubled once on a reply that runs out.
+#: Room for one search/replace pair, when the caller names no budget. Doubled
+#: once on a reply that runs out. The harness passes `ArmConfig
+#: .max_output_tokens`, so `--max-output-tokens` governs both arms (D45).
 SAMPLE_MAX_TOKENS = int(os.getenv("AGENTLESS_SAMPLE_MAX_TOKENS", "4096"))
 MAX_LOCATIONS = 3
 
@@ -86,8 +88,10 @@ def temperature_for(index: int) -> float:
 
 
 async def repair(client, model: str | None, root, issue: str, loc: LocalizationResult,
-                 num_samples: int, seed: int | None = None) -> RepairResult:
+                 num_samples: int, seed: int | None = None,
+                 max_output_tokens: int | None = None) -> RepairResult:
     result = RepairResult(samples=[])
+    budget = max_output_tokens or SAMPLE_MAX_TOKENS
     spots = locations_for(loc)
     contents: dict[str, str] = {}
     for spot in spots:
@@ -113,7 +117,7 @@ async def repair(client, model: str | None, root, issue: str, loc: LocalizationR
             + _hint(spot)
         )
         try:
-            reply = await _ask(client, model, prompt, temperature, SAMPLE_MAX_TOKENS, result,
+            reply = await _ask(client, model, prompt, temperature, budget, result,
                                sample_seed, f"sample-{index}")
         except LLMError as exc:
             if "context overflow" not in str(exc):
@@ -127,7 +131,7 @@ async def repair(client, model: str | None, root, issue: str, loc: LocalizationR
             # Asking once more with room to finish costs one call; discarding
             # it buys nothing.
             try:
-                reply = await _ask(client, model, prompt, temperature, SAMPLE_MAX_TOKENS * 2,
+                reply = await _ask(client, model, prompt, temperature, budget * 2,
                                    result, sample_seed, f"sample-{index}-reask")
             except LLMError as exc:
                 if "context overflow" not in str(exc):

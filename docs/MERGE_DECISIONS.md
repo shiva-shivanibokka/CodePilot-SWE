@@ -1258,3 +1258,60 @@ Each was reproduced by a failing test before anything was changed.
    and the lock still sits beside it. `Path.home()` itself remains the one
    environment dependency, and it is the same one the rest of the toolchain
    trusts.
+3. **C1, medium: the agent could never compact, so it died instead.**
+   `--compact-at` defaulted to 100,000 while the runbook passed
+   `--max-prompt-tokens 50000`, and `chat()` refuses an over-bound prompt
+   before compaction's threshold is ever reached — so an agent attempt whose
+   context grew past ~50k raised `LLMError`, which `_run_arm` records as an
+   arm error. That is exactly where a real agent gets going, and it would have
+   biased this study's own comparison against the agent arm while still paying
+   for the attempt. Both paid runbook commands now pass `--compact-at 35000`;
+   `tests/test_runbook.py::test_the_runbook_leaves_the_agent_room_to_compact`
+   asserts the documented value stays below the documented prompt bound.
+4. **C2, medium: the arms had different output budgets, against the agent.**
+   `--max-output-tokens` governed the agent only; agentless sampled at a
+   hardcoded 4,096 and re-asked at 8,192, and `estimate.AGENTLESS_OUTPUTS`
+   hardcoded the same, so the runbook's 2,048 made the agent's turn half the
+   length of an agentless sample's. The flag now reaches the agentless sampler
+   (`repair(max_output_tokens=...)`, forwarded by `run_agentless` from
+   `ArmConfig.max_output_tokens`), `estimate.agentless_outputs()` prices
+   whatever the flag says, and the runbook passes **4,096 to both arms**. One
+   asymmetry is kept and now stated in the plan: only agentless re-asks, at
+   double its budget, because a search/replace block cut off mid-JSON is
+   unusable while an agent's truncated turn is continued by its next step.
+   Re-priced from the documented dry run: agent **$11.32** + agentless $5.18 =
+   **$16.50**, still under $20 (it was $10.91 + $5.18 = $16.09 at 2,048, D43).
+5. **S3, C3, C5: disclosure, not code.**
+   * The $20 cap bounds **recorded** worst case, not the provider's bill.
+     LiteLLM's transport-level reconnect can bill a request the ledger records
+     once (D41); if *every* call double-billed, the real bill would reach about
+     **$33** — over this repository's $25 share, inside the $50 total. D41's
+     "inside the 20% margin" was true of the expected case ($1.54) and false
+     of the stated worst case. STUDY_PLAN now says so, and adds the only
+     mitigation available: compare the provider's usage page against the
+     ledger after the canary and early in the main run, and stop on divergence.
+   * The grading row claimed the official grader "as a cross-check" while the
+     same document listed it as not in the plan. It has never run: `swebench`
+     is not installed, nothing calls `official_grader.py`, and
+     `swebench_compat.py` is an import stub for that package, **not** a second
+     grader — so there is no grader-agreement evidence at all. The row now
+     says `resolved` is this harness's verdict, not a SWE-bench-comparable
+     number (README.md already said this; STUDY_PLAN overclaimed).
+   * Recorded as a strength: `sample(20, seed=0)` is deterministic over a
+     sha256-verified dataset at a pinned revision, and none of the 20
+     instances appears in any committed result, so the sample provably
+     predates any measurement on it.
+     `tests/test_bench_instances.py::test_no_sampled_instance_appears_in_a_committed_result`
+     keeps that true.
+
+**Noted, not acted on.** One home-directory path survives in history inside
+`bench/results/autonomous-swe-agent-recordings/sympy__sympy-18199.agentless.json`
+at commit `f66470b`; HEAD is clean (D42 redacted it). History is not rewritten
+here — the coordinator handles that.
+
+**Open question for the coordinator, not decided here.** 10 of the 20 sampled
+instances (8 django, astropy, scikit-learn) are in the categories this plan
+itself predicts the `/testbed` mount will break. Exclusions are free, but if
+all 10 drop, n is about 10 and the plan's own "a difference under ~25 points is
+not distinguishable" becomes about 35 points. The sampling is not changed
+without a decision, because its provenance is one of the study's strengths.

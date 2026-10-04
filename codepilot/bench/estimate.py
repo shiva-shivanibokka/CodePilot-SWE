@@ -148,8 +148,14 @@ if __name__ == "__main__":
 # Worst case of a design, from its caps (D39)
 # ---------------------------------------------------------------------------
 
-#: Output caps the agentless arm uses (localize.py, repair.py).
-AGENTLESS_OUTPUTS = {"localize": 2048, "sample": 4096, "reask": 8192}
+#: Localisation has its own output cap (localize.py); a sample uses the arm's
+#: `--max-output-tokens`, and its one re-ask double that (repair.py, D45).
+LOCALIZE_OUTPUT = 2048
+
+
+def agentless_outputs(max_output_tokens: int) -> dict[str, int]:
+    return {"localize": LOCALIZE_OUTPUT, "sample": max_output_tokens,
+            "reask": max_output_tokens * 2}
 
 
 def worst_case_design(
@@ -186,7 +192,8 @@ def worst_case_design(
         compaction = prompt_cost + max(2048, max_output_tokens) * p.output
         out["agent"] = runs * attempts * (max_cost_per_attempt + per_call + compaction)
     if "agentless" in arms:
-        calls = [AGENTLESS_OUTPUTS["localize"]] + [AGENTLESS_OUTPUTS["sample"], AGENTLESS_OUTPUTS["reask"]] * attempts
+        o = agentless_outputs(max_output_tokens)
+        calls = [o["localize"]] + [o["sample"], o["reask"]] * attempts
         out["agentless"] = runs * sum(prompt_cost + o * p.output for o in calls)
     out["total"] = out["agent"] + out["agentless"]
     return out
