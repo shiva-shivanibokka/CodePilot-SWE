@@ -781,3 +781,15 @@ give reproducible repeats on it; the study plan says so.
 failed first with the raw `BadRequestError`). 429 is still retried, then
 reported as an infrastructure error and excluded. Our own context guard (D22)
 is not a provider response and still counts as the arm failing.
+
+## D30. At most two requests per call, one retry layer
+
+`LLMClient` retried up to 6 times (7 requests per call, each billable if the
+provider served it and the response was lost), and LiteLLM's
+openai-compatible routes (Groq, OpenAI) passed requests through the OpenAI
+SDK, whose own default is 2 retries — two stacked layers. Now `max_retries=1`
+in the client and `num_retries=0, max_retries=0` on every request, so one call
+is at most two requests. Reproduced first:
+`tests/test_llm.py::test_a_persistent_rate_limit_costs_at_most_two_requests`
+ran out of scripted errors (the 6th retry), then passes with exactly 2.
+Every attempt passes the spend cap (D28) and is ledgered (D27).

@@ -362,3 +362,16 @@ async def test_a_rejected_request_aborts_the_run_instead_of_failing_the_agent(wi
     with pytest.raises(AbortRun):
         await LLMClient(model="claude-haiku-4-5").chat([{"role": "user", "content": "hi"}], max_tokens=10)
     assert len(sent) == 1, "a 4xx is not retried"
+
+
+async def test_a_persistent_rate_limit_costs_at_most_two_requests(wire):
+    """D30: the client's own retry loop allowed 6 retries (7 requests), and the
+    OpenAI SDK under LiteLLM's openai-compatible routes retries twice more by
+    default, so one call could become many. Now: two requests at most, one
+    retry layer."""
+    sent, replies = wire
+    replies += [litellm.RateLimitError("slow down", llm_provider="groq", model="x") for _ in range(5)]
+    with pytest.raises(litellm.RateLimitError):
+        await LLMClient(model="groq/x").chat([{"role": "user", "content": "hi"}])
+    assert len(sent) == 2
+    assert sent[0]["num_retries"] == 0 and sent[0]["max_retries"] == 0

@@ -641,9 +641,10 @@ def _first_line(exc: Exception) -> str:
 class LLMClient:
     """Messages in, `Reply` out.
 
-    Retries are this client's own (LiteLLM's are switched off so they do not
-    compound): rate limits and transient server errors back off exponentially,
-    which on a free tier is the difference between a run and a crash.
+    Retries are this client's own and nobody else's (LiteLLM's and the
+    OpenAI SDK's are switched off so they cannot compound): one retry after a
+    rate limit or transient server error, so a call is at most two requests
+    (D30).
     """
 
     def __init__(
@@ -651,7 +652,7 @@ class LLMClient:
         api_key: str | None = None,
         *,
         model: str = STRONG_MODEL,
-        max_retries: int = 6,
+        max_retries: int = 1,
         timeout: float = 300.0,
         backoff_cap: float = 60.0,
         api_base: str | None = None,
@@ -742,7 +743,11 @@ class LLMClient:
             "messages": wire,
             "max_tokens": max_tokens,
             "timeout": self._timeout,
+            # One retry layer only, ours (D30): LiteLLM's router retries and
+            # the OpenAI SDK's own default of 2 (used by openai-compatible
+            # routes such as Groq) are both switched off.
             "num_retries": 0,
+            "max_retries": 0,
         }
         if self._api_key:
             params["api_key"] = self._api_key
