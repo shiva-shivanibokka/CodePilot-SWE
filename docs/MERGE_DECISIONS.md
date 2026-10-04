@@ -1082,6 +1082,8 @@ code and closed. Tests: `tests/test_spend_controls.py`.
    each client checked only its own memory plus the ledger as it was at
    construction, so both would have gone.)
 2. **User-level ledger.** `%LOCALAPPDATA%\sop_eval\codepilot_swe\ledger.sqlite`
+   — **superseded by D45**: `%LOCALAPPDATA%` can be pointed elsewhere, which moved
+   the ledger *and* the lock; the path is now `~/.sop_eval/codepilot_swe/`.
    (`~/.local/share/...` elsewhere), outside the repository: another checkout
    or output directory cannot reset spend. No environment override; tests
    redirect `codepilot.llm.LEDGER_DIR` with an autouse fixture
@@ -1218,3 +1220,41 @@ the official grader was corrected: it is wired in (D37) but not run.
   paragraph summarises D25–D41.
 * "SWE-bench comparison" names the funded Haiku run and its numbers (D43).
 * Test count updated to the current suite: 387 passed, 1 skipped.
+
+## D45. Five holes the spend-safety gate found, and three disclosures
+
+An independent spend-safety review probed the spend path live (6 concurrent
+processes, a mid-call kill, a lock race, and the $16.09 total re-derived from
+Haiku's price) and passed all of that. It returned NOT READY on five points.
+Each was reproduced by a failing test before anything was changed.
+
+1. **S1, critical: `--max-total-usd nan` disabled the cap.** Every bound is a
+   comparison, and every comparison against `nan` is False, so the paid gate
+   (`args.max_total_usd > PROJECT_MAX_USD`), the dry run's `worst + already >
+   cap` and `Ledger.reserve`'s `spent + worst > cap` all passed it. Confirmed
+   here, not inferred: the first version of
+   `tests/test_spend_gate.py::test_a_cap_that_is_not_a_positive_number_is_refused`
+   omitted `--dry-run`, and the `nan` case started cloning a real repository
+   for a real run — the run it should have refused. Its `config` row recorded
+   `"max_total_usd": NaN` (kept out of the repository; `bench/results/run.jsonl`
+   is gitignored). `inf` was already refused by the hard-maximum comparison;
+   0 and negatives were harmless, since every reservation exceeds them.
+   Fixed at three layers, because one of them will be bypassed some day:
+   `run.py`'s paid gate refuses any cap that is not positive and finite
+   (exit 2) before anything runs; `dry_run` refuses to price a design against
+   such a cap, rather than printing "$16.09" as affordable; and
+   `Ledger.reserve` fails closed with `SpendCapReached`. Twenty tests over
+   `nan`, `NaN`, `inf`, `-inf`, `0` and `-1` at both layers. Nothing had
+   covered a non-finite cap, which is why it survived three review rounds.
+2. **S2, high: the ledger and the lock followed `%LOCALAPPDATA%`.**
+   `_ledger_home()` read that variable at import, and `runlock.lock_path()`
+   sits beside the ledger, so one relocated environment variable gave a fresh
+   $0 ledger — the canary's spend forgotten, the main run handed the whole $20
+   again, breaking the plan's "the $20 cap includes the canary" — and moved
+   the lock, letting two paid runs overlap. `_ledger_home()` is now
+   `Path.home() / ".sop_eval" / "codepilot_swe"` on every platform. The old
+   location held no rows, so nothing was left behind. Tests: the path does not
+   follow `LOCALAPPDATA` across a module reload, it is under `Path.home()`,
+   and the lock still sits beside it. `Path.home()` itself remains the one
+   environment dependency, and it is the same one the rest of the toolchain
+   trusts.

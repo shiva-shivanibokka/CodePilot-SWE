@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
 import re
 import time
@@ -340,9 +341,14 @@ def _ledger_home() -> Path:
     Outside the repository on purpose: running from another checkout or
     another output directory must not start a fresh ledger. There is no
     environment-variable override; tests monkeypatch `LEDGER_DIR`.
+
+    `Path.home()` on every platform, not `%LOCALAPPDATA%` (D45): that variable
+    is routinely set per-process, and moving it moved both the ledger — a
+    fresh $0 total, so the canary's spend was forgotten and the main run got
+    the whole cap again — and the lock beside it, letting two paid runs
+    overlap.
     """
-    base = os.environ.get("LOCALAPPDATA") or str(Path.home() / ".local" / "share")
-    return Path(base) / "sop_eval" / "codepilot_swe"
+    return Path.home() / ".sop_eval" / "codepilot_swe"
 
 
 LEDGER_DIR = _ledger_home()
@@ -409,6 +415,13 @@ class Ledger:
             db.execute("BEGIN IMMEDIATE")
             try:
                 if cap is not None:
+                    # A cap that is not a positive, finite number compares False
+                    # against everything: `nan` disabled the cap entirely (D45).
+                    if not math.isfinite(cap) or cap <= 0:
+                        raise SpendCapReached(
+                            f"spend cap {cap!r} is not a positive, finite number of dollars: "
+                            "refusing to send a request it cannot bound"
+                        )
                     if worst is None:
                         raise SpendCapReached(f"{model} has no price, so a spend cap cannot be enforced")
                     spent = self._total(db)

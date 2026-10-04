@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import os
 import re
 import sys
@@ -103,9 +104,15 @@ def dry_run(args, model_arms: list[str]) -> int:
         max_output_tokens=args.max_output_tokens,
     )
     already = Ledger.default().total_usd()
+    if args.max_total_usd is not None and (not math.isfinite(args.max_total_usd)
+                                           or args.max_total_usd <= 0):
+        # Not comparable, so not a bound: never print a design as affordable (D45).
+        print(f"  ! --max-total-usd {args.max_total_usd!r} is not a positive, finite "
+              "number of dollars: refusing to price a design against it")
+        return 2
     print(f"dry run: {n} instance(s) x arms {model_arms} x {args.attempts} attempt(s) on {args.model}")
     print(f"  caps: ${args.max_cost:.2f}/agent attempt, {args.max_prompt_tokens:,} prompt tokens/call, "
-          f"{args.max_output_tokens:,} output tokens/agent call")
+          f"{args.max_output_tokens:,} output tokens/call, both arms")
     for arm in model_arms:
         print(f"  worst case {arm:<9} ${worst[arm]:.2f}")
     print(f"  worst case total     ${worst['total']:.2f}  (+ ${already:.2f} already in the ledger)")
@@ -228,6 +235,12 @@ async def main(argv: list[str] | None = None) -> int:
     if paid:
         if args.max_total_usd is None:
             print("  ! a paid model needs --max-total-usd (the run-wide cap, D28)")
+            return 2
+        # nan compares False against every bound below, which disabled the cap
+        # outright; inf, 0 and negatives are refused here too (D45).
+        if not math.isfinite(args.max_total_usd) or args.max_total_usd <= 0:
+            print(f"  ! --max-total-usd {args.max_total_usd!r} is not a positive, finite "
+                  "number of dollars")
             return 2
         if args.max_total_usd > PROJECT_MAX_USD:
             print(f"  ! --max-total-usd ${args.max_total_usd:.2f} is above this project's hard "
