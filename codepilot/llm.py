@@ -269,6 +269,19 @@ class LLMError(RuntimeError):
     """Raised for failures the caller cannot retry its way out of."""
 
 
+class AbortRun(LLMError):
+    """Stop the whole run, not just this attempt: never scored as a result.
+
+    Raised for the global spend cap (D28) and for a request the provider
+    rejected as malformed (D29). The benchmark harness re-raises it rather
+    than recording an agent failure.
+    """
+
+
+class SpendCapReached(AbortRun):
+    """The next call could take total spend past `max_total_usd`."""
+
+
 class Ledger:
     """Append-only record of every model call, one JSON line each (D27).
 
@@ -600,8 +613,14 @@ class LLMClient:
         api_base: str | None = None,
         extra: dict[str, Any] | None = None,
         ledger: Ledger | None = None,
+        max_total_usd: float | None = None,
     ) -> None:
         self.model = model
+        #: Hard ceiling on everything this client spends, both benchmark arms
+        #: and compaction included, plus whatever the ledger already holds
+        #: from earlier runs. Checked before every request (D28).
+        self.max_total_usd = max_total_usd
+        self._prior_usd = ledger.total_usd() if ledger is not None else 0.0
         #: Every call is appended here as it happens, if set (D27).
         self.ledger = ledger
         #: Label written with each call and used to total spend per arm. The
@@ -733,6 +752,7 @@ class LLMClient:
 
         attempt = 0
         while True:
+            self._check_spend_cap(model, params, max_tokens)
             start = time.monotonic()
             try:
                 response = await litellm.acompletion(**params)
@@ -802,6 +822,47 @@ class LLMClient:
             row.update(error=f"{type(error).__name__}: {_first_line(error)}", cost_usd=0.0)
         if self.ledger is not None:
             self.ledger.append(row)
+
+    #: Applied to LiteLLM's prompt-token estimate in the spend cap's worst
+    #: case. LiteLLM counts with a generic tokenizer; for qwen2.5:7b it
+    #: undercounted by 1.39x (D22). 1.5x is a judgement for providers whose
+    #: tokenizer it does not know, Anthropic's included.
+    HOSTED_COUNT_MARGIN = 1.5
+
+    def total_spent_usd(self) -> float:
+        """Everything spent: this client's calls plus the ledger's history."""
+        return self._prior_usd + self.spent().cost_usd
+
+    def worst_case_usd(self, model: str, params: dict[str, Any], max_tokens: int) -> float | None:
+        """The most the next request could cost, or None if it is unpriced.
+
+        Every prompt token priced as a cache *write* (the dearest input
+        class) and the full `max_tokens` of output.
+        """
+        price = price_for(model)
+        if price is None:
+            return None
+        try:
+            estimate = _litellm().token_counter(
+                model=params["model"], messages=params["messages"], tools=params.get("tools")
+            )
+        except Exception:  # noqa: BLE001 - fall back to characters
+            estimate = sum(len(json.dumps(m)) for m in params["messages"]) // 3
+        prompt = int(estimate * self.HOSTED_COUNT_MARGIN)
+        return prompt * max(price.input, price.cache_write) + max_tokens * price.output
+
+    def _check_spend_cap(self, model: str, params: dict[str, Any], max_tokens: int) -> None:
+        if self.max_total_usd is None:
+            return
+        worst = self.worst_case_usd(model, params, max_tokens)
+        if worst is None:
+            raise SpendCapReached(f"{model} has no price, so a spend cap cannot be enforced")
+        spent = self.total_spent_usd()
+        if spent + worst > self.max_total_usd:
+            raise SpendCapReached(
+                f"spend cap: ${spent:.4f} spent + up to ${worst:.4f} for the next call "
+                f"> ${self.max_total_usd:.2f}"
+            )
 
     def spent(self, tag_prefix: str = "") -> TagSpend:
         """Total spend of every tag starting with `tag_prefix`."""

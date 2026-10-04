@@ -38,7 +38,7 @@ from codepilot.bench.prompts import AGENT_ARM, SHARED_BASE, issue_message
 from codepilot.bench.selection import Candidate, select
 from codepilot.context import Conversation
 from codepilot.events import EventStream, EventType
-from codepilot.llm import LLMClient, LLMError, Usage
+from codepilot.llm import AbortRun, LLMClient, LLMError, Usage
 from codepilot.permissions import Budget, PermissionGate
 from codepilot.tools import ToolContext
 from codepilot.workspace import Workspace
@@ -182,6 +182,8 @@ async def agent_attempt(env: BenchEnv, client, cfg: ArmConfig, issue: str, attem
     stopped_by, error = "error", None
     try:
         stopped_by = (await loop.run(issue_message(issue))).stopped_by
+    except AbortRun:
+        raise
     except Exception as exc:  # noqa: BLE001 - reported with the attempt
         error = exc
     finally:
@@ -286,6 +288,10 @@ async def _run_arm(env: BenchEnv, instance: dict, arm: str, cfg: ArmConfig, clie
             stopped.append(f"{len(run.candidates)} of {cfg.attempts} samples usable")
         else:
             raise ValueError(f"unknown arm {arm!r}")
+    except AbortRun:
+        # The spend cap, or a request the provider rejected: the run stops
+        # here and nothing about this arm is scored (D28, D29).
+        raise
     except (LLMError, Exception) as exc:  # noqa: BLE001 - one bad arm must not end the sweep
         error = f"{type(exc).__name__}: {exc}"[:2000]
         infra = is_infrastructure(exc)

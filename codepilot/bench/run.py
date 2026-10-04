@@ -38,7 +38,7 @@ from pathlib import Path
 from codepilot.bench import swebench
 from codepilot.bench.environment import BenchEnv, swebench_image
 from codepilot.bench.harness import ARMS, ArmConfig, InstanceResult, run_instance
-from codepilot.llm import price_for
+from codepilot.llm import AbortRun, price_for
 
 CHECK_ARMS = ("gold", "empty")
 
@@ -146,6 +146,9 @@ async def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--env-file", action="append", default=[],
                     help="a .env to load provider keys from (repeatable; never printed)")
     ap.add_argument("--out", default="bench/results/run.jsonl")
+    ap.add_argument("--max-total-usd", type=float, default=None, dest="max_total_usd",
+                    help="hard cap on the whole run's spend, both arms, at list price; "
+                         "includes what the ledger already records (D28)")
     ap.add_argument("--ledger", default=None,
                     help="append-only per-call spend log (default: <out>.ledger.jsonl)")
     args = ap.parse_args(argv)
@@ -191,7 +194,10 @@ async def main(argv: list[str] | None = None) -> int:
 
     ledger_path = Path(args.ledger) if args.ledger else out.with_suffix(".ledger.jsonl")
     client = LLMClient(model=args.model, api_base=args.api_base, extra=extra,
-                       ledger=Ledger(ledger_path))
+                       ledger=Ledger(ledger_path), max_total_usd=args.max_total_usd)
+    if args.max_total_usd is not None:
+        print(f"spend cap ${args.max_total_usd:.2f}; already in the ledger "
+              f"${client.total_spent_usd():.4f}")
     print(f"every model call is appended to {ledger_path}")
     print(f"{len(instances)} instance(s) x arms {args.arms} -> {out}")
     for n, inst in enumerate(instances, 1):
@@ -214,6 +220,12 @@ async def main(argv: list[str] | None = None) -> int:
                 await run_instance(inst, model_arms, cfg, backend=args.backend, setup=setup,
                                    image=args.image, python=args.python, on_result=report,
                                    client=client)
+        except AbortRun as exc:
+            write({"instance_id": iid, "arm": "aborted", "error": f"{type(exc).__name__}: {exc}"[:2000],
+                   "total_spent_usd": round(client.total_spent_usd(), 6),
+                   "timestamp": datetime.now(UTC).isoformat()})
+            print(f"    run aborted: {exc}")
+            return 3
         except Exception as exc:  # noqa: BLE001 - environment failures are results too
             spent = client.spent(f"{iid}:")
             row = {"instance_id": iid, "arm": "environment", "error": f"{type(exc).__name__}: {exc}"[:2000],

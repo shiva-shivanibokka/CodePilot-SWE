@@ -242,3 +242,73 @@ async def test_agentless_spend_survives_a_later_stage_failing(task, monkeypatch,
     assert "fell over" in row.error
     assert row.model_calls == 1
     assert row.cost_usd == pytest.approx(2000 * 1e-6 + 50 * 5e-6)
+
+
+# ---------------------------------------------------------------- spend cap
+
+
+def _fake_reply(text="", tool=None, prompt=3000, completion=200):
+    from types import SimpleNamespace
+
+    calls = None
+    if tool:
+        calls = [SimpleNamespace(id="c1", function=SimpleNamespace(name=tool[0], arguments=json.dumps(tool[1])))]
+    return SimpleNamespace(
+        model="claude-haiku-4-5",
+        choices=[SimpleNamespace(message=SimpleNamespace(content=text, tool_calls=calls),
+                                 finish_reason="tool_calls" if tool else "stop")],
+        usage=SimpleNamespace(prompt_tokens=prompt, completion_tokens=completion),
+    )
+
+
+async def test_the_spend_cap_stops_the_whole_run_across_both_arms(task, monkeypatch, tmp_path):
+    """Reproduction (D28): there was no run-wide cap — only a per-attempt
+    budget, which never saw agentless calls at all. With a $0.02 cap, the run
+    must stop before the call that could cross it, whichever arm makes it, and
+    the stop must not be scored as an agent failure."""
+    import litellm
+
+    from codepilot.llm import Ledger, LLMClient, SpendCapReached
+
+    sent = []
+
+    async def fake(**params):
+        sent.append(params)
+        return _fake_reply(tool=("list_files", {}))
+
+    monkeypatch.setattr(litellm, "acompletion", fake)
+    ledger = Ledger(tmp_path / "ledger.jsonl")
+    client = LLMClient(model="claude-haiku-4-5", ledger=ledger, max_total_usd=0.02)
+    with pytest.raises(SpendCapReached):
+        await run_instance(
+            task, ["agent", "agentless"],
+            ArmConfig(model="claude-haiku-4-5", attempts=1, max_turns=50, max_output_tokens=512),
+            client=client, env_options={"install": False, "venv": False},
+        )
+    assert ledger.total_usd() <= 0.02
+    assert len(sent) == len(ledger.rows()) >= 1
+
+
+async def test_a_new_run_counts_what_the_ledger_already_holds(tmp_path, monkeypatch):
+    import litellm
+
+    from codepilot.llm import Ledger, LLMClient, SpendCapReached
+
+    ledger = Ledger(tmp_path / "ledger.jsonl")
+    ledger.append({"tag": "earlier", "cost_usd": 0.019})
+
+    async def fake(**params):
+        return _fake_reply(text="hi")
+
+    monkeypatch.setattr(litellm, "acompletion", fake)
+    client = LLMClient(model="claude-haiku-4-5", ledger=ledger, max_total_usd=0.02)
+    with pytest.raises(SpendCapReached, match=r"\$0\.0190 spent"):
+        await client.chat([{"role": "user", "content": "x" * 4000}], max_tokens=512)
+
+
+async def test_an_unpriced_model_cannot_run_under_a_cap(monkeypatch):
+    from codepilot.llm import LLMClient, SpendCapReached
+
+    client = LLMClient(model="nobody/unknown-model", max_total_usd=1.0)
+    with pytest.raises(SpendCapReached, match="no price"):
+        await client.chat([{"role": "user", "content": "hi"}], max_tokens=10)

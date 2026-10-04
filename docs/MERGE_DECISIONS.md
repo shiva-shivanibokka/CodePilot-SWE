@@ -723,3 +723,29 @@ covers the ledger itself, including a 400 recorded with cost 0.
 
 Failed calls are recorded at $0: the providers this targets do not bill a
 rejected request. That is an assumption, stated, not a measurement.
+
+## D28. A run-wide spend cap, checked before every call
+
+**What.** `LLMClient(max_total_usd=...)` (`bench.run --max-total-usd`). Before
+every request — each retry included, compaction and both arms included,
+since they share the client — the worst case of the next call is computed:
+LiteLLM's prompt-token estimate x 1.5, every token priced at the dearer of
+input and cache-write, plus the full `max_tokens` at the output price. If
+spend so far plus that worst case exceeds the cap, `SpendCapReached` is raised
+and **the run stops**: the harness re-raises it (`AbortRun`) instead of
+scoring an agent failure, and `bench.run` writes an `aborted` row with the
+total and exits 3. "Spend so far" includes what the ledger file already held
+when the client was created, so re-running into the same ledger cannot reset
+the cap. An unpriced model cannot run under a cap at all.
+
+**Reproduced first.** There was no run-wide cap: only the agent's
+per-attempt `Budget`, which agentless calls never touched.
+`tests/test_bench_e2e.py::test_the_spend_cap_stops_the_whole_run_across_both_arms`
+(a $0.02 cap; must stop, ledger total <= cap, every request ledgered),
+`test_a_new_run_counts_what_the_ledger_already_holds` and
+`test_an_unpriced_model_cannot_run_under_a_cap` failed with ImportError first.
+
+**Limits.** The 1.5x margin on the prompt estimate is a judgement, not a
+measurement against Anthropic's tokenizer (D22 measured 1.39x for Qwen).
+The bound uses `max_tokens`, which the model may not use, so the cap is
+conservative: the run can stop with up to one call's worst case unspent.
