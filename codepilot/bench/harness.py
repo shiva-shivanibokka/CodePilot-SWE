@@ -26,6 +26,7 @@ always did: an outage is not a result.
 
 from __future__ import annotations
 
+import random
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -33,7 +34,7 @@ from datetime import UTC, datetime
 from codepilot.agent.loop import AgentLoop
 from codepilot.bench import checkout, swebench
 from codepilot.bench.agentless import run_agentless
-from codepilot.bench.environment import BenchEnv, swebench_image
+from codepilot.bench.environment import BenchEnv, fingerprint_diff, swebench_image
 from codepilot.bench.prompts import AGENT_ARM, SHARED_BASE, issue_message
 from codepilot.bench.selection import Candidate, select
 from codepilot.context import Conversation
@@ -121,6 +122,12 @@ class InstanceResult:
     error: str = ""
     infra_error: bool = False
     notes: list[str] = field(default_factory=list)
+    #: Changes to what `restore` does not reset (kept ignored files, installed
+    #: packages) between the environment's creation and this arm's grading.
+    #: Non-empty means this row ran or was graded in a changed environment (D35).
+    contamination: list[str] = field(default_factory=list)
+    #: The order the arms ran in on this instance (randomised, D35).
+    arm_order: list[str] = field(default_factory=list)
     #: What the arm did, compactly: the model's words, each tool call and the
     #: first line of its result, how it stopped. Without it a row can say an
     #: agent "finished" after one call and nothing about why.
@@ -265,8 +272,21 @@ async def run_instance(
         python=python, task_id=instance["instance_id"], **(env_options or {}),
     )
     try:
-        for arm in arms:
+        # Arm order is randomised per instance, deterministically from the run
+        # seed and the instance id, so neither arm always runs on a freshly set
+        # up environment while the other inherits the first one's side effects.
+        order = list(arms)
+        random.Random(f"{cfg.seed}:{instance['instance_id']}").shuffle(order)
+        baseline = await env.fingerprint()
+        for arm in order:
             result = await _run_arm(env, instance, arm, cfg, client)
+            result.arm_order = order
+            result.contamination = fingerprint_diff(baseline, await env.fingerprint())
+            if result.contamination:
+                result.notes.append(
+                    "environment changed since setup (kept files or installed packages): "
+                    "this arm ran or was graded in it"
+                )
             results.append(result)
             if on_result:
                 on_result(result)

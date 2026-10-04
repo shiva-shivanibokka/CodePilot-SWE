@@ -59,6 +59,27 @@ def swebench_image(instance_id: str) -> str:
     return f"swebench/sweb.eval.x86_64.{instance_id.replace('__', '_1776_')}:latest".lower()
 
 
+#: Run inside the task's interpreter: (path, size, mtime) of every file under
+#: each site-packages directory on sys.path, as one JSON object.
+_SITE_SCRIPT = """
+import json, os, sys
+out = {}
+for d in sorted({p for p in sys.path if p.endswith("site-packages") and os.path.isdir(p)}):
+    for root, dirs, files in os.walk(d):
+        dirs.sort()
+        for name in sorted(files):
+            if name.endswith(".pyc"):
+                continue
+            full = os.path.join(root, name)
+            try:
+                st = os.stat(full)
+            except OSError:
+                continue
+            out[os.path.relpath(full, d).replace(os.sep, "/")] = [st.st_size, st.st_mtime_ns]
+print("FINGERPRINT" + json.dumps(out))
+"""
+
+
 @dataclass
 class SetupRecord:
     command: str
@@ -171,6 +192,54 @@ class BenchEnv:
 
     async def run(self, command: str, timeout: int = 600) -> CommandResult:
         return await self.sandbox.run(command, timeout_seconds=timeout)
+
+    async def fingerprint(self) -> dict[str, str]:
+        """What `restore` does not reset, so a change to it can be detected (D35).
+
+        `restore` returns tracked files to the baseline but keeps ignored files
+        that existed then (build output, egg-info) as they are, and never
+        touches the installed packages. This records both: the content hash of
+        every kept file, and (path, size, mtime) of every file in the task
+        interpreter's site-packages.
+        """
+        import base64
+        import hashlib
+        import json as _json
+
+        prints: dict[str, str] = {}
+        for rel in sorted(self._keep_ignored):
+            path = self.root / rel
+            try:
+                prints[f"kept:{rel}"] = hashlib.sha256(path.read_bytes()).hexdigest()
+            except OSError:
+                prints[f"kept:{rel}"] = "missing"
+        encoded = base64.b64encode(_SITE_SCRIPT.encode()).decode()
+        result = await self.run(
+            f'python -c "import base64; exec(base64.b64decode(\'{encoded}\'))"', timeout=300
+        )
+        text = result.stdout
+        marker = text.find("FINGERPRINT")
+        if marker >= 0:
+            try:
+                for rel, stat in _json.loads(text[marker + len("FINGERPRINT"):].strip()).items():
+                    prints[f"site:{rel}"] = f"{stat[0]}:{stat[1]}"
+            except ValueError:
+                prints["site:<unreadable>"] = text[-200:]
+        else:
+            prints["site:<unavailable>"] = (result.combined or "")[-200:]
+        return prints
+
+
+def fingerprint_diff(before: dict[str, str], after: dict[str, str], limit: int = 20) -> list[str]:
+    """Human-readable changes between two fingerprints, at most `limit`."""
+    changes = []
+    for key in sorted(set(before) | set(after)):
+        if before.get(key) != after.get(key):
+            what = "added" if key not in before else "removed" if key not in after else "changed"
+            changes.append(f"{what}: {key}")
+    if len(changes) > limit:
+        changes = changes[:limit] + [f"... and {len(changes) - limit} more"]
+    return changes
 
 
 def _local_sandbox(root: Path, tmpdir: Path, python: str | None, use_venv: bool) -> LocalSandbox:

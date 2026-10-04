@@ -892,3 +892,29 @@ conversation once it passes ~4k tokens, and for an agentless repair prompt
 same file read it back. That asymmetry follows from the prompts' shapes, not
 from a different caching rule, and is stated in the study plan.
 `test_the_prefix_report_says_haiku_cannot_cache_the_system_prompt_alone`.
+
+## D35. Contamination between arms is detected; arm order is randomised
+
+**Reproduced first.** Both arms run in one environment, restored to the
+baseline between them (D14). `restore` resets tracked files and removes new
+ones, but keeps the ignored files setup created as they are, and never
+touches installed packages. An arm that rewrote a kept file (or pip-installed
+something) left the next arm — and its own grading — in a changed
+environment, silently. `tests/test_bench_e2e.py::test_an_arm_that_changes_the_kept_environment_is_flagged`
+(the first arm runs `echo tampered > build/artifact.txt` on a file setup
+created) failed first: no such field existed, and nothing noticed.
+
+**Fix (detection, not prevention).** `BenchEnv.fingerprint()` records the
+content hash of every kept ignored file and (path, size, mtime) of every file
+in the task interpreter's site-packages (run inside the sandbox, so it is the
+venv's or the container's). The harness fingerprints once after setup and
+again after each arm's grading; any difference is listed in the row's
+`contamination` field with a note. The review's stronger option — a fresh
+environment per arm — was not taken: it doubles setup time and clone traffic
+per instance, and detection makes any contamination visible and excludable.
+`test_the_fingerprint_really_sees_the_installed_packages` checks that it sees
+hundreds of real site-packages entries and is stable when nothing changed.
+
+**Arm order.** Shuffled per instance with `random.Random(f"{seed}:{instance_id}")`,
+recorded in each row (`arm_order`), so neither arm systematically runs first
+on a freshly built environment. `test_arm_order_is_randomised_per_instance_and_recorded`.

@@ -312,3 +312,61 @@ async def test_an_unpriced_model_cannot_run_under_a_cap(monkeypatch):
     client = LLMClient(model="nobody/unknown-model", max_total_usd=1.0)
     with pytest.raises(SpendCapReached, match="no price"):
         await client.chat([{"role": "user", "content": "hi"}], max_tokens=10)
+
+
+# ------------------------------------------- shared environment (D35)
+#
+# Reproduction: both arms run in one environment, restored to the baseline
+# between them — but `restore` only puts *tracked* files back. Ignored files
+# that setup created (build output, egg-info) are kept as they are, and the
+# installed packages are never checked, so an arm that changed either left the
+# next arm, and its own grading, running in a different environment, silently.
+
+CONTAMINATE = [
+    [("run_command", {"command": "echo tampered > build/artifact.txt"})],
+    [("finish", {"summary": "done"})],
+]
+
+
+async def test_an_arm_that_changes_the_kept_environment_is_flagged(tmp_path):
+    instance, _ = make_task(tmp_path)
+    instance = dict(instance)
+    model = ScriptedModel([CONTAMINATE, AGENT_FIXES], [])
+    rows = await run_instance(
+        instance, ["agent", "agent"], ArmConfig(model="scripted", attempts=1, max_turns=20),
+        client=model, setup="mkdir -p build && echo original > build/artifact.txt",
+        env_options={"install": False, "venv": False},
+    )
+    assert rows[0].contamination, "the first arm rewrote a kept file"
+    assert any("build/artifact.txt" in c for c in rows[0].contamination)
+    assert rows[1].contamination, "the second arm started in the changed environment"
+
+
+async def test_arm_order_is_randomised_per_instance_and_recorded(task):
+    orders = set()
+    for seed in range(6):
+        model = ScriptedModel([AGENT_FIXES], [FIX])
+        rows = await run_instance(
+            task, ["agent", "agentless"], ArmConfig(model="scripted", attempts=1, max_turns=20, seed=seed),
+            client=model, env_options={"install": False, "venv": False},
+        )
+        orders.add(tuple(r.arm for r in rows))
+        assert all(r.arm_order == [x.arm for x in rows] for r in rows)
+        if len(orders) == 2:
+            break
+    assert orders == {("agent", "agentless"), ("agentless", "agent")}
+
+
+async def test_the_fingerprint_really_sees_the_installed_packages(tmp_path):
+    from codepilot.bench.environment import BenchEnv
+
+    instance, _ = make_task(tmp_path)
+    env = await BenchEnv.create(instance["repo_url"], instance["base_commit"], install=False,
+                                venv=False, task_id="fp")
+    try:
+        prints = await env.fingerprint()
+        site = [k for k in prints if k.startswith("site:")]
+        assert len(site) > 100 and not any("<" in k for k in site), site[:3]
+        assert await env.fingerprint() == prints, "nothing changed, nothing flagged"
+    finally:
+        await env.close()
