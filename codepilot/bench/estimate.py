@@ -165,11 +165,12 @@ def worst_case_design(
 ) -> dict[str, float]:
     """The most a design can cost, if every cap is reached.
 
-    Agent: each attempt stops at its dollar budget, checked before each call,
-    so it can overshoot by one call: `max_cost_per_attempt` plus one call's
-    worst case (a `max_prompt_tokens` prompt at the dearer of input and
-    cache-write, plus `max_output_tokens` out). Compaction calls are inside
-    that budget (D32).
+    Agent: each attempt stops at its dollar budget, checked once per step, and
+    a step can make two calls after the check — a compaction summary and the
+    model call — so it can overshoot by two calls: `max_cost_per_attempt` plus
+    two calls' worst case (a `max_prompt_tokens` prompt at the dearer of input
+    and cache-write, plus `max_output_tokens` out; the compaction summary's
+    own cap is 2,048, no more than the agent's in the planned design).
 
     Agentless: one localisation and, per sample, one repair call and its
     possible re-ask at double the output cap — each with a full prompt.
@@ -182,7 +183,8 @@ def worst_case_design(
     out: dict[str, float] = {"agent": 0.0, "agentless": 0.0}
     if "agent" in arms:
         per_call = prompt_cost + max_output_tokens * p.output
-        out["agent"] = runs * attempts * (max_cost_per_attempt + per_call)
+        compaction = prompt_cost + max(2048, max_output_tokens) * p.output
+        out["agent"] = runs * attempts * (max_cost_per_attempt + per_call + compaction)
     if "agentless" in arms:
         calls = [AGENTLESS_OUTPUTS["localize"]] + [AGENTLESS_OUTPUTS["sample"], AGENTLESS_OUTPUTS["reask"]] * attempts
         out["agentless"] = runs * sum(prompt_cost + o * p.output for o in calls)

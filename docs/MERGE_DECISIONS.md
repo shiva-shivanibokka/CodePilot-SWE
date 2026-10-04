@@ -1048,3 +1048,20 @@ worst case agent     $9.45
 worst case agentless $5.18
 worst case total     $14.64  (+ $0.00 already in spend-ledger.jsonl)
 ```
+
+## D40. Correction to D39: an agent step can overshoot its budget by two calls
+
+Re-reading `AgentLoop.run`: `budget.check()` runs once per step
+(`codepilot/agent/loop.py:91`), and a step can then make **two** calls — the
+compaction summary (D32) and the model call. D39's worst case allowed one. The
+agent term is now `max_cost_per_attempt + 2 x per-call worst case` (the
+compaction summary's output cap is 2,048). The updated test expectation
+failed against D39's formula, then passed. The planned design's dry run is now:
+
+```
+worst case agent     $10.91
+worst case agentless $5.18
+worst case total     $16.09
+```
+
+D39's $14.64 is superseded.
