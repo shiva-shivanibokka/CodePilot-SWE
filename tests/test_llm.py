@@ -375,3 +375,92 @@ async def test_a_persistent_rate_limit_costs_at_most_two_requests(wire):
         await LLMClient(model="groq/x").chat([{"role": "user", "content": "hi"}])
     assert len(sent) == 2
     assert sent[0]["num_retries"] == 0 and sent[0]["max_retries"] == 0
+
+
+# ------------------------------------------------- thinking blocks (D31)
+#
+# Claude 5-family models think by default (adaptive) and return `thinking`
+# blocks — usually with empty text and a signature — before their tool_use
+# blocks. The Anthropic API requires them to be passed back unchanged on the
+# next request of a tool-use turn. LiteLLM exposes them as
+# `message.thinking_blocks` and accepts them back on an assistant message
+# under the same key. Reproduced: reply_from_response dropped them, so the
+# second request of every agent turn on Opus/Sonnet 5.5 went out without them.
+
+
+def claude_response_with_thinking():
+    from types import SimpleNamespace
+
+    thinking = [{"type": "thinking", "thinking": "", "signature": "sig-abc"},
+                {"type": "redacted_thinking", "data": "opaque"}]
+    call = SimpleNamespace(id="toolu_1", function=SimpleNamespace(name="read_file", arguments='{"path": "a.py"}'))
+    return SimpleNamespace(
+        model="claude-sonnet-5-5",
+        choices=[SimpleNamespace(
+            message=SimpleNamespace(content="Reading it.", tool_calls=[call], thinking_blocks=thinking,
+                                    reasoning_content=""),
+            finish_reason="tool_calls")],
+        usage=SimpleNamespace(prompt_tokens=6000, completion_tokens=120,
+                              cache_read_input_tokens=4000, cache_creation_input_tokens=1500),
+    )
+
+
+async def test_thinking_blocks_round_trip_with_tool_calls_and_cache_usage(wire):
+    sent, replies = wire
+    replies += [
+        claude_response_with_thinking(),
+        litellm.RateLimitError("slow down", llm_provider="anthropic", model="x"),
+        response(text="done"),
+        litellm.BadRequestError("thinking block missing", model="x", llm_provider="anthropic"),
+    ]
+    from codepilot.llm import AbortRun
+
+    client = LLMClient(model="claude-sonnet-5-5")
+    convo = Conversation(system_prompt="SYS")
+    convo.user("fix it")
+    first = await client.chat(convo.messages, system=convo.system_blocks(), max_tokens=100)
+    assert [b["type"] for b in first.content] == ["thinking", "redacted_thinking", "text", "tool_use"]
+    assert first.content[0]["signature"] == "sig-abc"
+    assert (first.usage.input_tokens, first.usage.cache_read_tokens, first.usage.cache_write_tokens) == (500, 4000, 1500)
+    assert first.cost_usd == pytest.approx(500 * 2e-6 + 120 * 10e-6 + 4000 * 0.2e-6 + 1500 * 2.5e-6)
+
+    convo.assistant(first.content)
+    convo.tool_results([Conversation.tool_result("toolu_1", "contents")])
+    await client.chat(convo.messages, system=convo.system_blocks(), max_tokens=100)  # 429, then ok
+    echoed = [m for m in sent[1]["messages"] if m["role"] == "assistant"][0]
+    assert echoed["thinking_blocks"] == [
+        {"type": "thinking", "thinking": "", "signature": "sig-abc"},
+        {"type": "redacted_thinking", "data": "opaque"},
+    ]
+    assert echoed["tool_calls"][0]["id"] == "toolu_1"
+    assert len(sent) == 3, "the 429 was retried once"
+    with pytest.raises(AbortRun):
+        await client.chat(convo.messages, system=convo.system_blocks(), max_tokens=100)
+
+
+def test_thinking_blocks_are_not_sent_to_providers_that_did_not_make_them():
+    msgs = [{"role": "assistant", "content": [
+        {"type": "thinking", "thinking": "", "signature": "s"},
+        {"type": "text", "text": "hi"}]}]
+    client = LLMClient(model="groq/llama-3.3-70b-versatile")
+    params = client._request(msgs, system=None, tools=None, model=client.model, max_tokens=10,
+                             temperature=None, effort=None)
+    assert "thinking_blocks" not in params["messages"][0]
+
+
+def test_litellm_puts_echoed_thinking_ahead_of_the_tool_call_in_the_anthropic_body():
+    """Not just our translation: LiteLLM 1.103.2's own Anthropic transform,
+    offline, produces thinking -> tool_use in the assistant turn."""
+    from litellm.llms.anthropic.chat.transformation import AnthropicConfig
+
+    convo = Conversation(system_prompt="S")
+    convo.user("fix")
+    convo.assistant([{"type": "thinking", "thinking": "", "signature": "sig"},
+                     {"type": "tool_use", "id": "toolu_1", "name": "read_file", "input": {"path": "a"}}])
+    convo.tool_results([Conversation.tool_result("toolu_1", "x")])
+    body = AnthropicConfig().transform_request(
+        model="claude-sonnet-5-5", messages=to_openai_messages(convo.messages),
+        optional_params={"max_tokens": 10}, litellm_params={}, headers={})
+    assistant = [m for m in body["messages"] if m["role"] == "assistant"][0]
+    assert [b["type"] for b in assistant["content"]] == ["thinking", "tool_use"]
+    assert assistant["content"][0]["signature"] == "sig"

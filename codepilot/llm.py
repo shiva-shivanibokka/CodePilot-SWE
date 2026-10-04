@@ -399,8 +399,11 @@ def to_openai_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     A user message carrying `tool_result` blocks becomes one `tool` message per
     result (the OpenAI shape has no multi-result message), followed by a user
     message for any text that travelled with them. Assistant `tool_use` blocks
-    become `tool_calls`. Thinking blocks are dropped: they are only valid when
-    echoed to the same Anthropic model, and LiteLLM carries reasoning apart.
+    become `tool_calls`. Assistant `thinking` / `redacted_thinking` blocks
+    travel as `thinking_blocks`, unchanged, which is where LiteLLM's Anthropic
+    route puts them back in front of the tool calls (D31). They are only valid
+    on the model that produced them; `_request` strips them for other
+    providers.
     """
     out: list[dict[str, Any]] = []
     for m in messages:
@@ -424,6 +427,9 @@ def to_openai_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 if b.get("type") == "tool_use"
             ]
             msg: dict[str, Any] = {"role": "assistant", "content": text or None}
+            thinking = [b for b in blocks if b.get("type") in ("thinking", "redacted_thinking")]
+            if thinking:
+                msg["thinking_blocks"] = thinking
             if calls:
                 msg["tool_calls"] = calls
             elif msg["content"] is None:
@@ -525,6 +531,13 @@ def reply_from_response(
     stop_reason = "tool_use" if tool_calls else _STOP_REASONS.get(finish, finish)
 
     content: list[dict[str, Any]] = []
+    # Thinking first, exactly as returned (signature included): Claude 5-family
+    # models think by default and require these blocks back, unchanged, ahead
+    # of the tool calls they preceded (D31).
+    for block in getattr(message, "thinking_blocks", None) or []:
+        block = _block(block)
+        if block.get("type") in ("thinking", "redacted_thinking"):
+            content.append(dict(block))
     if text:
         content.append({"type": "text", "text": text})
     for call in tool_calls:
@@ -727,6 +740,10 @@ class LLMClient:
     ) -> dict[str, Any]:
         keep = self._keep_cache_control(model)
         wire = to_openai_messages(messages)
+        if not keep:
+            # Thinking blocks are bound to the Anthropic model that wrote them.
+            for m in wire:
+                m.pop("thinking_blocks", None)
         sys_msg = to_openai_system(system, keep_cache_control=keep)
         if sys_msg is not None:
             wire = [sys_msg, *wire]

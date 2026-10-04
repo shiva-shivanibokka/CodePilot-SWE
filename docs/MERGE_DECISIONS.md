@@ -793,3 +793,32 @@ is at most two requests. Reproduced first:
 `tests/test_llm.py::test_a_persistent_rate_limit_costs_at_most_two_requests`
 ran out of scripted errors (the 6th retry), then passes with exactly 2.
 Every attempt passes the spend cap (D28) and is ledgered (D27).
+
+## D31. Claude thinking blocks survive the round trip
+
+Claude 5-family models think by default (Opus 5.5 cannot turn it off) and
+return `thinking` blocks — empty text by default, with a signature — ahead
+of their `tool_use` blocks; the API requires them back unchanged on the
+next request of the turn (claude-api reference, thinking & effort section).
+LiteLLM 1.103.2 exposes them as `message.thinking_blocks` and accepts them on
+an assistant message under the same key (`transformation.py` ~L2531-2689).
+
+**Reproduced first.** `reply_from_response` ignored `thinking_blocks`, so
+they never reached the conversation, and `to_openai_messages` dropped any
+thinking block by design (D2's note). `tests/test_llm.py::test_thinking_blocks_round_trip_with_tool_calls_and_cache_usage`
+failed (`['text', 'tool_use']`).
+
+**Fix.** Thinking and redacted-thinking blocks are kept, first and verbatim,
+in `Reply.content`; `to_openai_messages` sends them back as `thinking_blocks`;
+`_request` strips them for any provider other than Anthropic (they are bound
+to the model that produced them). The test drives a fake Claude response with
+thinking blocks, a tool call and cache usage fields, then a 429 (retried once)
+and a 400 (aborts the run). `test_litellm_puts_echoed_thinking_ahead_of_the_tool_call_in_the_anthropic_body`
+runs LiteLLM's own Anthropic transform offline on the result: the assistant
+turn is `thinking -> tool_use`, signature intact.
+
+**Not covered.** No live Claude request was made, so preserved-thinking's
+history-editing check (compaction rewrites history; D32 counts it) is
+untested against the real API. Compaction on a Claude 5.5 model may make
+later thinking blocks invalid; the planned paid run uses claude-haiku-4-5,
+which does not think unless asked, so it does not hit this.
