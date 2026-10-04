@@ -269,6 +269,48 @@ class LLMError(RuntimeError):
     """Raised for failures the caller cannot retry its way out of."""
 
 
+class Ledger:
+    """Append-only record of every model call, one JSON line each (D27).
+
+    Written from inside `LLMClient.chat` the moment a call returns or fails,
+    flushed and fsync'd, so a crash, a kill or an exception later in the same
+    arm can never lose what was spent. Totals are read back from the file.
+    """
+
+    def __init__(self, path: Path | str) -> None:
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def append(self, row: dict[str, Any]) -> None:
+        line = json.dumps(row, default=str)
+        with self.path.open("a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+
+    def rows(self) -> list[dict[str, Any]]:
+        if not self.path.is_file():
+            return []
+        return [json.loads(x) for x in self.path.read_text(encoding="utf-8").splitlines() if x.strip()]
+
+    def total_usd(self, tag_prefix: str = "") -> float:
+        return sum(
+            float(r.get("cost_usd") or 0.0)
+            for r in self.rows()
+            if str(r.get("tag", "")).startswith(tag_prefix)
+        )
+
+
+@dataclass
+class TagSpend:
+    """What one tag (an instance's arm, say) has spent through this client."""
+
+    usage: Usage = field(default_factory=Usage)
+    cost_usd: float = 0.0
+    calls: int = 0
+    unpriced_calls: int = 0
+
+
 # ---------------------------------------------------------------------------
 # Translation: conversation shape  <->  OpenAI/LiteLLM shape
 # ---------------------------------------------------------------------------
@@ -557,8 +599,15 @@ class LLMClient:
         backoff_cap: float = 60.0,
         api_base: str | None = None,
         extra: dict[str, Any] | None = None,
+        ledger: Ledger | None = None,
     ) -> None:
         self.model = model
+        #: Every call is appended here as it happens, if set (D27).
+        self.ledger = ledger
+        #: Label written with each call and used to total spend per arm. The
+        #: benchmark sets it to "<instance>:<arm>" before each arm.
+        self.tag = ""
+        self._spend: dict[str, TagSpend] = {}
         self._api_key = api_key
         #: For a self-hosted server, e.g. an Ollama endpoint.
         self._api_base = api_base
@@ -688,6 +737,13 @@ class LLMClient:
             try:
                 response = await litellm.acompletion(**params)
                 break
+            except BaseException as exc:
+                self._record(model, error=exc)
+                if not isinstance(exc, Exception):
+                    raise
+                failure = exc
+            try:
+                raise failure
             except litellm.NotFoundError as exc:
                 raise LLMError(
                     f"Model {model!r} was not found. It may have been retired, or "
@@ -715,7 +771,48 @@ class LLMClient:
         # (D26); LiteLLM's completion_cost is not used, so 0 can never stand in
         # for "unknown".
         reply.cost_usd = cost_of(model, reply.usage)
+        self._record(model, reply=reply)
         return reply
+
+    def _record(self, model: str, *, reply: Reply | None = None, error: BaseException | None = None) -> None:
+        """Account for one call, in memory and in the ledger, immediately."""
+        spend = self._spend.setdefault(self.tag, TagSpend())
+        row: dict[str, Any] = {
+            "at": time.time(), "tag": self.tag, "model": model,
+        }
+        if reply is not None:
+            spend.usage = spend.usage + reply.usage
+            spend.calls += 1
+            if reply.cost_usd is None:
+                spend.unpriced_calls += 1
+            else:
+                spend.cost_usd += reply.cost_usd
+            row.update(
+                input_tokens=reply.usage.input_tokens,
+                output_tokens=reply.usage.output_tokens,
+                cache_read_tokens=reply.usage.cache_read_tokens,
+                cache_write_tokens=reply.usage.cache_write_tokens,
+                cost_usd=reply.cost_usd,
+                latency_ms=reply.latency_ms,
+                stop_reason=reply.stop_reason,
+            )
+        if error is not None:
+            # A rejected request (4xx, rate limit) is not billed by the
+            # providers this targets; it is still recorded.
+            row.update(error=f"{type(error).__name__}: {_first_line(error)}", cost_usd=0.0)
+        if self.ledger is not None:
+            self.ledger.append(row)
+
+    def spent(self, tag_prefix: str = "") -> TagSpend:
+        """Total spend of every tag starting with `tag_prefix`."""
+        total = TagSpend()
+        for tag, s in self._spend.items():
+            if tag.startswith(tag_prefix):
+                total.usage = total.usage + s.usage
+                total.cost_usd += s.cost_usd
+                total.calls += s.calls
+                total.unpriced_calls += s.unpriced_calls
+        return total
 
     #: LiteLLM's token count for a local model is a generic tokenizer and
     #: undercounts what the model's chat template produces: measured 1,396

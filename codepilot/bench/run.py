@@ -146,6 +146,8 @@ async def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--env-file", action="append", default=[],
                     help="a .env to load provider keys from (repeatable; never printed)")
     ap.add_argument("--out", default="bench/results/run.jsonl")
+    ap.add_argument("--ledger", default=None,
+                    help="append-only per-call spend log (default: <out>.ledger.jsonl)")
     args = ap.parse_args(argv)
 
     for stream in (sys.stdout, sys.stderr):
@@ -185,9 +187,12 @@ async def main(argv: list[str] | None = None) -> int:
     for item in args.model_option:
         key, _, value = item.partition("=")
         extra[key] = int(value) if value.isdigit() else value
-    from codepilot.llm import LLMClient
+    from codepilot.llm import Ledger, LLMClient
 
-    client = LLMClient(model=args.model, api_base=args.api_base, extra=extra)
+    ledger_path = Path(args.ledger) if args.ledger else out.with_suffix(".ledger.jsonl")
+    client = LLMClient(model=args.model, api_base=args.api_base, extra=extra,
+                       ledger=Ledger(ledger_path))
+    print(f"every model call is appended to {ledger_path}")
     print(f"{len(instances)} instance(s) x arms {args.arms} -> {out}")
     for n, inst in enumerate(instances, 1):
         iid = inst["instance_id"]
@@ -210,7 +215,10 @@ async def main(argv: list[str] | None = None) -> int:
                                    image=args.image, python=args.python, on_result=report,
                                    client=client)
         except Exception as exc:  # noqa: BLE001 - environment failures are results too
+            spent = client.spent(f"{iid}:")
             row = {"instance_id": iid, "arm": "environment", "error": f"{type(exc).__name__}: {exc}"[:2000],
+                   # Whatever the arms spent before the environment failed (D27).
+                   "cost_usd": round(spent.cost_usd, 6), "model_calls": spent.calls,
                    "timestamp": datetime.now(UTC).isoformat()}
             write(row)
             print(f"    environment failed: {row['error'][:200]}")

@@ -299,3 +299,26 @@ async def test_ollama_models_use_the_native_chat_endpoint(wire):
         [{"role": "user", "content": "hi"}], tools=schemas(["finish"])
     )
     assert sent[0]["model"] == "ollama_chat/qwen2.5:7b"
+
+
+# ------------------------------------------------------------------ ledger
+
+
+async def test_every_call_is_in_the_ledger_before_chat_returns(wire, tmp_path):
+    from codepilot.llm import Ledger
+
+    sent, replies = wire
+    replies += [response(text="a", prompt=1000, completion=10), litellm.BadRequestError("bad", model="x", llm_provider="anthropic")]
+    ledger = Ledger(tmp_path / "ledger.jsonl")
+    client = LLMClient(model="claude-haiku-4-5", ledger=ledger)
+    client.tag = "inst:agent"
+    await client.chat([{"role": "user", "content": "hi"}], max_tokens=10)
+    rows = ledger.rows()
+    assert len(rows) == 1 and rows[0]["tag"] == "inst:agent"
+    assert rows[0]["cost_usd"] == pytest.approx(1000 * 1e-6 + 10 * 5e-6)
+    with pytest.raises(litellm.BadRequestError):
+        await client.chat([{"role": "user", "content": "hi"}], max_tokens=10)
+    rows = ledger.rows()
+    assert len(rows) == 2 and "BadRequestError" in rows[1]["error"]
+    assert ledger.total_usd("inst:") == pytest.approx(rows[0]["cost_usd"])
+    assert client.spent("inst:").calls == 1

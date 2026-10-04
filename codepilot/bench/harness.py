@@ -242,6 +242,11 @@ async def run_instance(
 async def _run_arm(env: BenchEnv, instance: dict, arm: str, cfg: ArmConfig, client) -> InstanceResult:
     started = time.monotonic()
     spend = Spend()
+    tag = f"{instance['instance_id']}:{arm}"
+    if hasattr(client, "tag"):
+        # Every call this arm makes is labelled, in memory and in the ledger,
+        # so its spend is known even if a later stage raises (D27).
+        client.tag = tag
     events = EventStream(session_id=f"{instance['instance_id']}:{arm}")
     candidates: list[Candidate] = []
     stopped: list[str] = []
@@ -310,6 +315,11 @@ async def _run_arm(env: BenchEnv, instance: dict, arm: str, cfg: ArmConfig, clie
         ]
     else:
         chosen_diff, basis, selected, votes, cand_info = "", "no candidates", "", 0, []
+
+    if hasattr(client, "spent"):
+        recorded = client.spent(tag)
+        spend.usage, spend.cost_usd = recorded.usage, recorded.cost_usd
+        spend.calls, spend.unpriced_calls = recorded.calls, recorded.unpriced_calls
 
     report = await swebench.grade(env, instance, chosen_diff)
     env.restore()

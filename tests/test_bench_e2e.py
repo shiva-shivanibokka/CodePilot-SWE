@@ -206,3 +206,39 @@ async def test_a_result_says_what_the_agent_did(task):
     assert tools == [step[0][0] for step in AGENT_FIXES]
     assert any(t["kind"] == "done" and "add() subtracted" in t["text"] for t in agent.transcript)
     assert agentless.transcript, "the agentless arm records its samples too"
+
+
+async def test_agentless_spend_survives_a_later_stage_failing(task, monkeypatch, tmp_path):
+    """Reproduction (D27): agentless added its spend to the row only after
+    run_agentless returned, so a repair stage that raised lost the
+    localisation's cost from the row — money spent and not reported."""
+    from types import SimpleNamespace
+
+    import litellm
+
+    from codepilot.llm import LLMClient
+
+    calls = []
+
+    async def fake(**params):
+        calls.append(params)
+        if len(calls) == 1:
+            return SimpleNamespace(
+                model="claude-haiku-4-5",
+                choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps({
+                    "suspect_files": ["calc.py"],
+                    "suspect_locations": [{"file": "calc.py", "function_name": "add"}]}),
+                    tool_calls=None), finish_reason="stop")],
+                usage=SimpleNamespace(prompt_tokens=2000, completion_tokens=50),
+            )
+        raise RuntimeError("the repair stage fell over")
+
+    monkeypatch.setattr(litellm, "acompletion", fake)
+    client = LLMClient(model="claude-haiku-4-5")
+    (row,) = await run_instance(
+        task, ["agentless"], ArmConfig(model="claude-haiku-4-5", attempts=1),
+        client=client, env_options={"install": False, "venv": False},
+    )
+    assert "fell over" in row.error
+    assert row.model_calls == 1
+    assert row.cost_usd == pytest.approx(2000 * 1e-6 + 50 * 5e-6)

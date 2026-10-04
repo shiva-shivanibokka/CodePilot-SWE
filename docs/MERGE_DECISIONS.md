@@ -702,3 +702,24 @@ price), replacing `litellm.completion_cost`, whose 0.0 for unknown models the
 old code then had to second-guess. `bench.run` refuses any model arm on an
 unpriced model before loading anything (`test_a_paid_run_on_an_unpriced_model_is_refused_before_anything_starts`);
 `bench.estimate` prints "no price: refused" instead of $0.
+
+## D27. An append-only ledger written by every call, and spend read from it
+
+**What.** `codepilot.llm.Ledger`: one JSON line per model call — tag, model,
+token classes, cost, latency, stop reason, or the error for a failed call —
+appended, flushed and fsync'd from inside `LLMClient.chat` as each call
+returns or fails. The client also keeps per-tag totals in memory
+(`client.spent(prefix)`). The benchmark tags every call `<instance>:<arm>`;
+each result row's spend now comes from those totals, and an environment-error
+row carries whatever its arms spent. `bench.run` writes the ledger beside the
+results (`<out>.ledger.jsonl`, or `--ledger`).
+
+**Reproduced first.** `tests/test_bench_e2e.py::test_agentless_spend_survives_a_later_stage_failing`:
+localisation succeeds (2,000 + 50 tokens on claude-haiku-4-5), the repair stage
+raises; the row reported `model_calls=0`, cost 0 — spent and not reported,
+because agentless added its spend only after `run_agentless` returned. After:
+1 call, $0.00225. `tests/test_llm.py::test_every_call_is_in_the_ledger_before_chat_returns`
+covers the ledger itself, including a 400 recorded with cost 0.
+
+Failed calls are recorded at $0: the providers this targets do not bill a
+rejected request. That is an assumption, stated, not a measurement.
