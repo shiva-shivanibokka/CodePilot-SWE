@@ -138,11 +138,11 @@ python -m codepilot.bench.run --instances pallets__flask-4992 --arms gold empty 
 
 # Both arms, one attempt each
 python -m codepilot.bench.run --instances pallets__flask-4992 --arms agent agentless \
-    --model gemini/gemini-2.5-flash --setups bench/setups.json
+    --model gemini/gemini-2.5-flash --setups bench/setups.json --max-total-usd 2
 
 # Budget-matched: 3 agent attempts vs 3 agentless samples, 50 sampled instances, Docker
 python -m codepilot.bench.run --sample 50 --seed 0 --attempts 3 --arms agent agentless \
-    --backend docker --image official --model ...
+    --backend docker --image official --model ... --max-total-usd 20 --dry-run
 
 # CodePilot's own task suite
 python -m codepilot.bench.suite.runner --dry-run
@@ -151,6 +151,19 @@ python -m codepilot.bench.suite.runner --dry-run
 Results are written one JSON line per (instance, arm) as they finish, with
 anything key-shaped redacted. A run the provider refused to serve is marked
 `infra_error` and excluded, never scored as a failure.
+
+**Spend controls** (MERGE_DECISIONS D25–D41). A paid model needs
+`--max-total-usd`, at most the project maximum of $20
+(`bench.run.PROJECT_MAX_USD`), and a published price — an unpriced model is
+refused. Every request is reserved at its worst-case cost in a user-level
+SQLite ledger (`%LOCALAPPDATA%\sop_eval\codepilot_swe\`) before it is sent,
+atomically against the cap, and settled to its real cost after; a request
+that dies mid-flight stays charged at its worst case. One retry at most;
+any other 4xx, or a reply from a different model than requested, aborts the
+run. Compaction calls count. One paid run at a time (a lock file with stale
+recovery). `--dry-run` prints the design's worst case from its caps and
+refuses if it exceeds the cap; `--response-cache` replays identical requests
+for free.
 
 **Backends.** `local` runs in a per-task virtualenv with bash and with
 provider keys removed from the environment — **no isolation**: the model's
@@ -204,8 +217,9 @@ SWE-bench Lite instances, `claude-sonnet-5`, local backend, August 2026 — in
 They were graded by the harness this merge replaced (20-test cap, `-k`
 substring selection, `-x`, history-leaking clone), so their `resolved` flags
 are not comparable to anything this harness produces. They are kept because
-they are the only measured SWE-bench token counts available, and the study's
-cost estimate is built on them.
+they were the first measured SWE-bench token counts available. The study's
+cost estimate is now built on this repository's own smoke run (below); these
+recordings are kept beside it for comparison (STUDY_PLAN.md, "Cost estimate").
 
 ### Harness validation (not a result)
 
@@ -230,7 +244,12 @@ before the committed rows (MERGE_DECISIONS D23, D24).
 
 ### SWE-bench comparison
 
-Not run. [`bench/STUDY_PLAN.md`](bench/STUDY_PLAN.md): 50 instances, 3 seeds,
+Not run. Funded next: a first run of both arms on `claude-haiku-4-5-20251001`,
+20 random Lite instances, N = 1, under a $20 hard cap — expected about
+$1.54–$4.61, worst case from the caps $16.09 (`--dry-run`) — with its exact
+commands, which the test suite runs against a fake model
+(`tests/test_runbook.py`). The full design in
+[`bench/STUDY_PLAN.md`](bench/STUDY_PLAN.md) is not funded: 50 instances, 3 seeds,
 both arms budget-matched at N = 3, an issue/gold-patch mismatch analysis, and a
 priced estimate of **$4.69–$161.88** depending on the model (26.9M input and
 1.1M output tokens, scaled from the smoke run's measured counts; roughly three
@@ -294,7 +313,7 @@ times that if instances are harder and a stronger model works longer than the
 ## Development
 
 ```bash
-pytest -q          # 316 passed, 1 skipped (the opt-in Docker test); no key, no network
+pytest -q          # 387 passed, 1 skipped (the opt-in Docker test); no key, no network
 ruff check .
 python -m codepilot.doctor
 ```

@@ -1207,3 +1207,14 @@ with no request sent when the ledger is already at the cap. All five failed
 before the section existed (no runbook blocks). The "Not in this plan" note on
 the official grader was corrected: it is wired in (D37) but not run.
 
+## D44. README: estimate source, spend controls, funded run
+
+* The README said the study's cost estimate "is built on" the carried-over
+  Autonomous-SWE-Agent recordings; since the smoke run it is built on this
+  repository's own smoke tokens, with the recordings kept for comparison
+  (STUDY_PLAN.md, "Cost estimate"). Corrected.
+* The two paid examples in "The benchmark" would now be refused without
+  `--max-total-usd` (D41); the cap was added to them. A "Spend controls"
+  paragraph summarises D25–D41.
+* "SWE-bench comparison" names the funded Haiku run and its numbers (D43).
+* Test count updated to the current suite: 387 passed, 1 skipped.
