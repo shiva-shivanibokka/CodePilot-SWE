@@ -748,8 +748,13 @@ class LLMClient:
         ledger: Ledger | None = None,
         max_total_usd: float | None = None,
         response_cache: Path | str | None = None,
+        max_prompt_tokens: int | None = None,
     ) -> None:
         self.model = model
+        #: Refuse (as an arm failure, not a run abort) any request whose
+        #: generous estimate exceeds this, so every call has a known worst case
+        #: and a design's worst case can be computed before it runs (D39).
+        self.max_prompt_tokens = max_prompt_tokens
         #: Directory of stored replies keyed by (model, request hash, tag), so
         #: re-running a benchmark does not pay twice for identical requests.
         self.response_cache = Path(response_cache) if response_cache else None
@@ -904,6 +909,13 @@ class LLMClient:
         )
 
         self._check_fits(params, max_tokens)
+        if self.max_prompt_tokens is not None:
+            estimate = estimate_prompt_tokens(params["messages"], params.get("tools"))
+            if estimate > self.max_prompt_tokens:
+                raise LLMError(
+                    f"context overflow: prompt bound exceeded (~{estimate} tokens estimated > "
+                    f"{self.max_prompt_tokens}); not sent"
+                )
 
         key = self._cache_key(params, cache_tag)
         cached = self._cache_get(key, model)

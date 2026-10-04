@@ -142,3 +142,49 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+# ---------------------------------------------------------------------------
+# Worst case of a design, from its caps (D39)
+# ---------------------------------------------------------------------------
+
+#: Output caps the agentless arm uses (localize.py, repair.py).
+AGENTLESS_OUTPUTS = {"localize": 2048, "sample": 4096, "reask": 8192}
+
+
+def worst_case_design(
+    model: str,
+    *,
+    instances: int,
+    seeds: int,
+    attempts: int,
+    arms: list[str],
+    max_cost_per_attempt: float,
+    max_prompt_tokens: int,
+    max_output_tokens: int,
+) -> dict[str, float]:
+    """The most a design can cost, if every cap is reached.
+
+    Agent: each attempt stops at its dollar budget, checked before each call,
+    so it can overshoot by one call: `max_cost_per_attempt` plus one call's
+    worst case (a `max_prompt_tokens` prompt at the dearer of input and
+    cache-write, plus `max_output_tokens` out). Compaction calls are inside
+    that budget (D32).
+
+    Agentless: one localisation and, per sample, one repair call and its
+    possible re-ask at double the output cap — each with a full prompt.
+    """
+    p = price_for(model)
+    if p is None:
+        raise KeyError(f"no price for {model}")
+    prompt_cost = max_prompt_tokens * max(p.input, p.cache_write)
+    runs = instances * seeds
+    out: dict[str, float] = {"agent": 0.0, "agentless": 0.0}
+    if "agent" in arms:
+        per_call = prompt_cost + max_output_tokens * p.output
+        out["agent"] = runs * attempts * (max_cost_per_attempt + per_call)
+    if "agentless" in arms:
+        calls = [AGENTLESS_OUTPUTS["localize"]] + [AGENTLESS_OUTPUTS["sample"], AGENTLESS_OUTPUTS["reask"]] * attempts
+        out["agentless"] = runs * sum(prompt_cost + o * p.output for o in calls)
+    out["total"] = out["agent"] + out["agentless"]
+    return out

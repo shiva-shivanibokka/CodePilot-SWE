@@ -1014,3 +1014,37 @@ Four gaps found by another project's second review, checked here and applied.
 Also fixed in the tests' fake: it raised only `Exception` subclasses, so a
 scripted `KeyboardInterrupt` was returned as a "response"; it now raises any
 `BaseException`.
+
+## D39. A dry run that prices the design at its caps, and a per-request prompt bound
+
+**Prompt bound.** A design's worst case cannot be computed if a single request
+can be arbitrarily large (an agentless repair prompt carries a whole file).
+`LLMClient(max_prompt_tokens=...)` (`bench.run --max-prompt-tokens`, default
+50,000) refuses any request whose generous estimate (D38) exceeds it, before it
+is sent; the refusal is an arm failure, like D22's local overflow, not a run
+abort. `tests/test_pricing.py::test_a_prompt_over_the_bound_is_refused_not_sent`.
+
+**Dry run.** `bench.run ... --dry-run` prints the worst case of the planned
+design from its caps and exits 2 if that, plus what the project ledger already
+holds, exceeds `--max-total-usd` — no keys loaded, nothing run.
+`codepilot.bench.estimate.worst_case_design`:
+
+* agent, per attempt: the per-attempt dollar budget (checked before each call,
+  compaction included, D32) plus one call of overshoot
+  (`max_prompt_tokens` at the dearer of input and cache-write + the agent's
+  output cap);
+* agentless, per instance: localisation (2,048 output tokens) and, per sample,
+  one repair call (4,096) and its possible re-ask (8,192), each with a full
+  `max_prompt_tokens` prompt.
+
+Tests: `test_the_worst_case_of_a_design_is_computed_from_the_caps`,
+`test_a_dry_run_refuses_a_design_whose_worst_case_exceeds_the_cap` (both failed
+first). For the planned design — 20 instances, 1 seed, both arms, N = 1,
+claude-haiku-4-5-20251001, $0.40 per agent attempt, 50,000-token prompt bound,
+2,048 output tokens per agent call:
+
+```
+worst case agent     $9.45
+worst case agentless $5.18
+worst case total     $14.64  (+ $0.00 already in spend-ledger.jsonl)
+```

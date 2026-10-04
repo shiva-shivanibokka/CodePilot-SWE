@@ -37,7 +37,7 @@ from pathlib import Path
 from codepilot.bench import swebench
 from codepilot.bench.environment import BenchEnv, swebench_image
 from codepilot.bench.harness import ARMS, ArmConfig, InstanceResult, run_instance
-from codepilot.llm import AbortRun, price_for
+from codepilot.llm import AbortRun, Ledger, price_for
 
 CHECK_ARMS = ("gold", "empty")
 
@@ -82,6 +82,29 @@ PROJECT_LEDGER = Path(__file__).resolve().parents[2] / "bench" / "spend-ledger.j
 def ledger_path(out: str | Path) -> Path:
     """The ledger for a run writing to `out`: always the project's."""
     return PROJECT_LEDGER
+
+
+def dry_run(args, model_arms: list[str]) -> int:
+    """Price the planned design at its caps, before anything runs (D39)."""
+    from codepilot.bench.estimate import worst_case_design
+
+    n = len(args.instances) if args.instances else args.sample
+    worst = worst_case_design(
+        args.model, instances=n, seeds=1, attempts=args.attempts, arms=model_arms,
+        max_cost_per_attempt=args.max_cost, max_prompt_tokens=args.max_prompt_tokens,
+        max_output_tokens=args.max_output_tokens,
+    )
+    already = Ledger(PROJECT_LEDGER).total_usd() if PROJECT_LEDGER.is_file() else 0.0
+    print(f"dry run: {n} instance(s) x arms {model_arms} x {args.attempts} attempt(s) on {args.model}")
+    print(f"  caps: ${args.max_cost:.2f}/agent attempt, {args.max_prompt_tokens:,} prompt tokens/call, "
+          f"{args.max_output_tokens:,} output tokens/agent call")
+    for arm in model_arms:
+        print(f"  worst case {arm:<9} ${worst[arm]:.2f}")
+    print(f"  worst case total     ${worst['total']:.2f}  (+ ${already:.2f} already in {PROJECT_LEDGER.name})")
+    if args.max_total_usd is not None and worst["total"] + already > args.max_total_usd:
+        print(f"  ! exceeds --max-total-usd ${args.max_total_usd:.2f}: refusing")
+        return 2
+    return 0
 
 
 def load_keys(paths: list[str]) -> None:
@@ -161,6 +184,12 @@ async def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-total-usd", type=float, default=None, dest="max_total_usd",
                     help="hard cap on the whole run's spend, both arms, at list price; "
                          "includes what the ledger already records (D28)")
+    ap.add_argument("--max-prompt-tokens", type=int, default=50_000, dest="max_prompt_tokens",
+                    help="refuse any request estimated above this (the arm fails); bounds "
+                         "every call's worst case (D39)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="print the design's worst-case cost and stop; exit 2 if it exceeds "
+                         "--max-total-usd")
     ap.add_argument("--response-cache", default=None, dest="response_cache",
                     help="directory of stored replies; a rerun is served from it at $0 (D33)")
     args = ap.parse_args(argv)
@@ -177,6 +206,8 @@ async def main(argv: list[str] | None = None) -> int:
         print(f"  ! {args.model} has no price (codepilot.llm.PRICING or LiteLLM's map); "
               "refusing to run a model whose spend cannot be capped.")
         return 2
+    if args.dry_run:
+        return dry_run(args, model_arms_requested)
     load_keys(args.env_file)
     setups = json.loads(Path(args.setups).read_text(encoding="utf-8")) if args.setups else {}
     instances = choose_instances(args)
@@ -207,6 +238,7 @@ async def main(argv: list[str] | None = None) -> int:
     ledger_file = ledger_path(out)
     client = LLMClient(model=args.model, api_base=args.api_base, extra=extra,
                        ledger=Ledger(ledger_file), max_total_usd=args.max_total_usd,
+                       max_prompt_tokens=args.max_prompt_tokens,
                        response_cache=args.response_cache)
     if args.max_total_usd is not None:
         print(f"spend cap ${args.max_total_usd:.2f}; already in the ledger "
