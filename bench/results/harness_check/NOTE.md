@@ -42,3 +42,31 @@ list stopped at the first module a required test named. Both are fixed and
 unit-tested; this file is the run after the fix. The larger draw (40-50
 instances) was **not** run: it needs one official image each, about 200 GB
 against 176 GB free, and the harness never pulls (D41).
+
+## 2026-10-05 — the local-backend check that preceded the paid study
+
+`--arms gold empty` over the 18 non-compiled instances of `instances.sample(20,
+seed=0)`. No model was called; nothing was paid for. Files:
+`2026-10-05-local-18.jsonl` (with `setuptools` in every recipe),
+`2026-10-05-local-18-nosetuptools.jsonl` (the partial run before that fix, kept as
+before-fix evidence), `2026-10-05-local-retry4.jsonl` (four instances retried with
+`setuptools<81`; all four still unusable).
+
+**10 of 18 usable.** 8 fully clean; django-12308 and django-13551 resolve with the
+gold patch but their `empty` arm passes 1 of 2 required tests, so they are easier
+than intended and are flagged in the study's RESULTS.md rather than dropped.
+
+Three defects this check caught, each of which would have produced a confident
+0/10 vs 0/10 at full price:
+
+- **No `--setups` argument** meant no test dependencies were installed, so `pytest`
+  was absent and every required test reported "missing".
+- **Python 3.12 removed `distutils`**, which older Django imports at
+  `django/utils/version.py`. django-13401, -12308 and -13551 scored 0 of everything
+  until `setuptools` was added to their recipe; then 32/32, 20/20 and 56/56.
+- **setuptools 84 dropped `pkg_resources`**, which breaks both sphinx instances and
+  xarray at import. Pinning `setuptools<81` restores the import but exposes further
+  incompatibilities, so those three stay excluded.
+
+Recipes that worked are in `bench/setups-local.json`; the ones tried and rejected
+are in `bench/setups-local-attempted.json`, so the attempt is not repeated blind.

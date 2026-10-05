@@ -1,0 +1,6 @@
+{
+  "sphinx-doc__sphinx-7738": "python -m pip install -q \"setuptools<81\" \"pytest>=7.4,<8\" && python -m pip install -q -e .",
+  "sphinx-doc__sphinx-8627": "python -m pip install -q \"setuptools<81\" \"pytest>=7.4,<8\" && python -m pip install -q -e .",
+  "pydata__xarray-4094": "python -m pip install -q \"setuptools<81\" \"pytest>=7.4,<8\" \"numpy<2\" pandas && python -m pip install -q -e .",
+  "pytest-dev__pytest-7373": "python -m pip install -q \"setuptools<81\" setuptools_scm && python -m pip install -q -e ."
+}
