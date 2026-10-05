@@ -66,6 +66,16 @@ def redact(text: str) -> tuple[str, int]:
         if form:
             count += text.count(form)
             text = text.replace(form, "<HOME>")
+    # Then the bare account name. Replacing only the full home directory was not
+    # enough: a captured `log_tail` is trimmed to its last N characters, so the
+    # `C:\Users\` prefix is routinely cut off and `<name>\AppData\...` survived
+    # with nothing for the loop above to match. That is how the account name
+    # reached two committed result files, caught by
+    # tests/test_bench_instances.py::test_committed_results_carry_no_personal_paths.
+    name = Path.home().name
+    if name:
+        count += text.count(name)
+        text = text.replace(name, "<HOME>")
     for pattern in SECRET_PATTERNS:
         text, n = pattern.subn("[REDACTED]", text)
         count += n

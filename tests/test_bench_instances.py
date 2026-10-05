@@ -97,8 +97,14 @@ def test_committed_results_carry_no_personal_paths():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1] / "bench" / "results"
-    leaks = [p for p in root.rglob("*") if p.is_file() and "<user>" in p.read_text(encoding="utf-8", errors="replace")]
-    assert leaks == []
+    # The needle is this machine's account name, not a literal. A hardcoded name
+    # only guards one machine, and writing it here published the very string the
+    # test exists to keep out of the repository.
+    name = Path.home().name
+    assert name, "cannot determine the account name to search for"
+    leaks = [p for p in root.rglob("*")
+             if p.is_file() and name in p.read_text(encoding="utf-8", errors="replace")]
+    assert leaks == [], f"account name found in: {[p.name for p in leaks]}"
 
 
 def test_new_result_rows_have_the_home_directory_redacted():
@@ -127,10 +133,53 @@ def test_no_sampled_instance_appears_in_a_committed_arm_result():
 
     ids = {r["instance_id"] for r in sample(20, 0)}
     results = pathlib.Path(__file__).resolve().parents[1] / "bench" / "results"
+    # `harness_check` was always excluded: it makes no model call and judges the
+    # environment, not either arm. `haiku-study` is excluded for a different and
+    # weaker reason -- it IS an arm result, and a disclosed one. Until the study
+    # ran, this guard could forbid every arm result outright; now that the study
+    # is recorded, a blanket ban would forbid publishing the very thing the
+    # sampling was for. So the ban narrows to *undisclosed* results, and the
+    # study is pinned below so it cannot quietly grow to cover more instances.
+    DISCLOSED = {"harness_check", "haiku-study"}
     committed = [p for p in results.rglob("*")
-                 if p.is_file() and "harness_check" not in p.parts]
-    assert committed
+                 if p.is_file() and not (DISCLOSED & set(p.parts))]
     for p in committed:
         text = p.read_text(encoding="utf-8", errors="replace")
         overlap = sorted(i for i in ids if i in text)
-        assert not overlap, f"{p.name} already holds a result for {overlap}"
+        assert not overlap, f"{p.name} already holds an undisclosed result for {overlap}"
+
+    # The pin: the study covers exactly the 10 instances its write-up reports, so
+    # adding an eleventh arm result there fails here instead of passing silently.
+    import json
+
+    study = results / "haiku-study" / "main.jsonl"
+    # The first row is the run's `config`, which carries no instance_id.
+    studied = {row["instance_id"]
+               for row in (json.loads(line) for line in study.read_text(encoding="utf-8").splitlines() if line.strip())
+               if row.get("instance_id")}
+    assert len(studied) == 10, f"the study covers {len(studied)} instances; its write-up reports 10"
+    assert studied <= ids, "the study ran an instance outside sample(20, 0)"
+
+
+def test_redact_catches_the_account_name_in_a_truncated_path():
+    r"""A log tail cut mid-path kept the account name (found publishing the study).
+
+    `redact` replaced only the full home directory, so `C:\Users\<name>\AppData\...`
+    truncated to `<name>\AppData\...` -- which is what a captured `log_tail` holds
+    once it is trimmed -- matched nothing and the name survived into committed
+    results. `test_committed_results_carry_no_personal_paths` went red on exactly
+    this, two commits after the study landed.
+    """
+    from pathlib import Path
+
+    from codepilot.bench.run import redact
+
+    name = Path.home().name
+    for text in (
+        name + r"\AppData\Local\Temp\bench-x\repo\django",      # plain Windows path
+        name + r"\\AppData\\Local\\Temp\\bench-x",              # JSON-escaped, as stored
+        name + "/AppData/Local/Temp/bench-x",                   # forward-slash form
+    ):
+        clean, n = redact(text)
+        assert name not in clean, f"account name survived redaction of {text!r}"
+        assert n >= 1

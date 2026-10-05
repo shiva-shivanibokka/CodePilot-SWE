@@ -1317,7 +1317,8 @@ the hashes cited in this document were remapped by matching subjects.
 Verified here, commit by commit over all 96 commits on `main`:
 
 * **No home-directory path survives in any commit's tracked content.**
-  `git grep -I -i` for `C:\Users\<user>` / `C:/Users/<user>` over every commit on
+  `git grep -I -i` for `C:\Users\<account>` / `C:/Users/<account>` (the machine
+  account name, deliberately not written out here) over every commit on
   `main` returns nothing. The same scan over `backup/pre-filter-codepilot`
   returns **47** commits — not the one this entry originally named — which is
   both the positive control that the scan works and the reason a tip-only
@@ -1327,14 +1328,33 @@ Verified here, commit by commit over all 96 commits on `main`:
   the carried-over recordings and the harness-check rows, and `%LOCALAPPDATA%`
   in `bench/STUDY_PLAN.md`, `codepilot/llm.py`, `tests/test_spend_gate.py` and
   this file. There is no `OneDrive` match anywhere.
-* **The only `<user>` matches are benign and intentional.** At HEAD there is
-  exactly one: the needle in
-  `tests/test_bench_instances.py::test_committed_results_carry_no_personal_paths`,
-  the leak detector itself. In the historical commits it also appears in
-  `github_integration/pr_creator.py` as part of the **public** repository URL
-  `https://github.com/shiva-shivanibokka/Autonomous-SWE-Agent` in a generated pull-request
-  footer — a GitHub account name in a public link, not a machine path or a
-  credential.
+* **Both claims above were true when written and were later falsified by this
+  branch's own study commit. Corrected 2026-10-05, before the first push.**
+  1. **The scan pattern had a blind spot.** Searching for `C:\Users\<name>` /
+     `C:/Users/<name>` requires the prefix. A captured `log_tail` is trimmed to
+     its last N characters, so the prefix is routinely cut off and
+     `<name>\AppData\Local\Temp\...` survives with nothing to match. The study
+     commit added exactly that to `bench/results/haiku-study/main.jsonl` (twice)
+     and `bench/results/harness_check/2026-10-05-local-18.jsonl` (once). The
+     repository's own guard,
+     `tests/test_bench_instances.py::test_committed_results_carry_no_personal_paths`,
+     went **red** on it — and was not run when the study was committed. Root
+     cause fixed in `codepilot.bench.run.redact`, which now also replaces the
+     bare account name; the three occurrences were re-redacted with that
+     function; and a regression test covers the truncated-path form.
+  2. **The pull-request URL was not a valid public link.** This entry described
+     `https://github.com/<account>/Autonomous-SWE-Agent` as "a GitHub account name
+     in a public link". It was not: that path segment was the local Windows
+     account name, and the
+     GitHub account is `shiva-shivanibokka`, so every generated pull-request
+     footer pointed at a repository that does not exist. Fixed to the real
+     handle rather than placeholdered, since the link is meant to work.
+  3. **The leak detector no longer hardcodes the name.** Its needle is
+     `Path.home().name`, so it guards any machine instead of one, and the test
+     file itself stops publishing the string it exists to exclude.
+  The lesson recorded rather than smoothed over: a scan is only as good as its
+  pattern, and this one was trusted twice — once in this audit and once by me
+  when I re-scanned the new result files and reported them clean.
 * **Commit messages are clean.** Across all 96 commits the only matches are the
   literal `%LOCALAPPDATA%` in two messages.
 * **A backup of the pre-rewrite history exists locally** on the branch
@@ -1513,6 +1533,6 @@ reference is about the old history and is correct as written.
 **Position.** D45's "Noted, not acted on" paragraph was rewritten to state only
 what was verified commit by commit over all 96 commits on `main`, including the
 count the original undercounted (47 pre-rewrite commits carried the path, not
-one) and the two benign `<user>` matches that remain. It also records that
+one) and the account-name matches that remain. It also records that
 `git cat-file -e` is not a valid staleness check while
 `backup/pre-filter-codepilot` keeps the old objects reachable.
