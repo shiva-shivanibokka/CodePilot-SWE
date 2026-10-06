@@ -35,7 +35,14 @@
      "cost_usd": 0.051576,
      "model_calls": 2,
      "wall_seconds": 15.4,
-     "transcript_events": 2
+     "transcript_events": 2,
+     "changed_lines": 0,
+     "kinds": {
+      "localize": 1,
+      "sample": 1
+     },
+     "f2p_passed": 0,
+     "f2p_total": 0
     },
     "agent": {
      "resolved": true,
@@ -45,7 +52,17 @@
      "cost_usd": 0.325708,
      "model_calls": 62,
      "wall_seconds": 257.4,
-     "transcript_events": 161
+     "transcript_events": 161,
+     "changed_lines": 158,
+     "kinds": {
+      "text": 41,
+      "tool_call": 59,
+      "tool_result": 59,
+      "budget": 1,
+      "error": 1
+     },
+     "f2p_passed": 1,
+     "f2p_total": 1
     }
    }
   },
@@ -61,7 +78,14 @@
      "cost_usd": 0.043625,
      "model_calls": 2,
      "wall_seconds": 25.1,
-     "transcript_events": 2
+     "transcript_events": 2,
+     "changed_lines": 13,
+     "kinds": {
+      "localize": 1,
+      "sample": 1
+     },
+     "f2p_passed": 0,
+     "f2p_total": 1
     },
     "agent": {
      "resolved": false,
@@ -71,7 +95,17 @@
      "cost_usd": 0.220555,
      "model_calls": 62,
      "wall_seconds": 190.7,
-     "transcript_events": 157
+     "transcript_events": 157,
+     "changed_lines": 283,
+     "kinds": {
+      "text": 35,
+      "tool_call": 60,
+      "tool_result": 60,
+      "budget": 1,
+      "error": 1
+     },
+     "f2p_passed": 0,
+     "f2p_total": 0
     }
    }
   },
@@ -87,7 +121,17 @@
      "cost_usd": 0.24447,
      "model_calls": 60,
      "wall_seconds": 197.4,
-     "transcript_events": 162
+     "transcript_events": 162,
+     "changed_lines": 353,
+     "kinds": {
+      "text": 42,
+      "tool_call": 59,
+      "tool_result": 59,
+      "budget": 1,
+      "error": 1
+     },
+     "f2p_passed": 1,
+     "f2p_total": 1
     },
     "agentless": {
      "resolved": false,
@@ -97,7 +141,14 @@
      "cost_usd": 0.016668,
      "model_calls": 2,
      "wall_seconds": 14.7,
-     "transcript_events": 2
+     "transcript_events": 2,
+     "changed_lines": 12,
+     "kinds": {
+      "localize": 1,
+      "sample": 1
+     },
+     "f2p_passed": 0,
+     "f2p_total": 1
     }
    }
   },
@@ -113,7 +164,14 @@
      "cost_usd": 0.015606,
      "model_calls": 2,
      "wall_seconds": 23.7,
-     "transcript_events": 2
+     "transcript_events": 2,
+     "changed_lines": 4,
+     "kinds": {
+      "localize": 1,
+      "sample": 1
+     },
+     "f2p_passed": 0,
+     "f2p_total": 2
     },
     "agent": {
      "resolved": false,
@@ -123,7 +181,17 @@
      "cost_usd": 0.261819,
      "model_calls": 62,
      "wall_seconds": 251.0,
-     "transcript_events": 171
+     "transcript_events": 171,
+     "changed_lines": 9,
+     "kinds": {
+      "text": 51,
+      "tool_call": 59,
+      "tool_result": 59,
+      "budget": 1,
+      "error": 1
+     },
+     "f2p_passed": 0,
+     "f2p_total": 2
     }
    }
   },
@@ -139,7 +207,14 @@
      "cost_usd": 0.019175,
      "model_calls": 2,
      "wall_seconds": 19.2,
-     "transcript_events": 2
+     "transcript_events": 2,
+     "changed_lines": 0,
+     "kinds": {
+      "localize": 1,
+      "sample": 1
+     },
+     "f2p_passed": 0,
+     "f2p_total": 0
     },
     "agent": {
      "resolved": true,
@@ -149,7 +224,16 @@
      "cost_usd": 0.2313,
      "model_calls": 62,
      "wall_seconds": 143.8,
-     "transcript_events": 161
+     "transcript_events": 161,
+     "changed_lines": 102,
+     "kinds": {
+      "text": 42,
+      "tool_call": 59,
+      "tool_result": 59,
+      "done": 1
+     },
+     "f2p_passed": 1,
+     "f2p_total": 1
     }
    }
   },
@@ -165,7 +249,16 @@
      "cost_usd": 0.190413,
      "model_calls": 48,
      "wall_seconds": 168.5,
-     "transcript_events": 130
+     "transcript_events": 130,
+     "changed_lines": 38,
+     "kinds": {
+      "text": 35,
+      "tool_call": 47,
+      "tool_result": 47,
+      "done": 1
+     },
+     "f2p_passed": 0,
+     "f2p_total": 1
     },
     "agentless": {
      "resolved": false,
@@ -175,7 +268,14 @@
      "cost_usd": 0.016558,
      "model_calls": 1,
      "wall_seconds": 6.2,
-     "transcript_events": 2
+     "transcript_events": 2,
+     "changed_lines": 0,
+     "kinds": {
+      "localize": 1,
+      "sample": 1
+     },
+     "f2p_passed": 0,
+     "f2p_total": 0
     }
    }
   },
@@ -191,7 +291,14 @@
      "cost_usd": 0.049035,
      "model_calls": 2,
      "wall_seconds": 21.8,
-     "transcript_events": 2
+     "transcript_events": 2,
+     "changed_lines": 4,
+     "kinds": {
+      "localize": 1,
+      "sample": 1
+     },
+     "f2p_passed": 0,
+     "f2p_total": 2
     },
     "agent": {
      "resolved": true,
@@ -201,7 +308,16 @@
      "cost_usd": 0.18625,
      "model_calls": 37,
      "wall_seconds": 182.4,
-     "transcript_events": 102
+     "transcript_events": 102,
+     "changed_lines": 19,
+     "kinds": {
+      "text": 31,
+      "tool_call": 35,
+      "tool_result": 35,
+      "done": 1
+     },
+     "f2p_passed": 2,
+     "f2p_total": 2
     }
    }
   },
@@ -217,7 +333,14 @@
      "cost_usd": 0.025987,
      "model_calls": 2,
      "wall_seconds": 23.7,
-     "transcript_events": 2
+     "transcript_events": 2,
+     "changed_lines": 5,
+     "kinds": {
+      "localize": 1,
+      "sample": 1
+     },
+     "f2p_passed": 1,
+     "f2p_total": 1
     },
     "agent": {
      "resolved": true,
@@ -227,7 +350,16 @@
      "cost_usd": 0.131392,
      "model_calls": 32,
      "wall_seconds": 92.2,
-     "transcript_events": 90
+     "transcript_events": 90,
+     "changed_lines": 6,
+     "kinds": {
+      "text": 29,
+      "tool_call": 30,
+      "tool_result": 30,
+      "done": 1
+     },
+     "f2p_passed": 1,
+     "f2p_total": 1
     }
    }
   },
@@ -243,7 +375,17 @@
      "cost_usd": 0.234552,
      "model_calls": 60,
      "wall_seconds": 136.5,
-     "transcript_events": 155
+     "transcript_events": 155,
+     "changed_lines": 27,
+     "kinds": {
+      "text": 35,
+      "tool_call": 59,
+      "tool_result": 59,
+      "budget": 1,
+      "error": 1
+     },
+     "f2p_passed": 1,
+     "f2p_total": 2
     },
     "agentless": {
      "resolved": false,
@@ -253,7 +395,13 @@
      "cost_usd": 0.009124,
      "model_calls": 1,
      "wall_seconds": 6.7,
-     "transcript_events": 1
+     "transcript_events": 1,
+     "changed_lines": 0,
+     "kinds": {
+      "localize": 1
+     },
+     "f2p_passed": 0,
+     "f2p_total": 0
     }
    }
   },
@@ -269,7 +417,14 @@
      "cost_usd": 0.015628,
      "model_calls": 2,
      "wall_seconds": 22.0,
-     "transcript_events": 2
+     "transcript_events": 2,
+     "changed_lines": 2,
+     "kinds": {
+      "localize": 1,
+      "sample": 1
+     },
+     "f2p_passed": 1,
+     "f2p_total": 2
     },
     "agent": {
      "resolved": false,
@@ -279,7 +434,16 @@
      "cost_usd": 0.227085,
      "model_calls": 57,
      "wall_seconds": 135.8,
-     "transcript_events": 143
+     "transcript_events": 143,
+     "changed_lines": 5,
+     "kinds": {
+      "text": 34,
+      "tool_call": 54,
+      "tool_result": 54,
+      "done": 1
+     },
+     "f2p_passed": 1,
+     "f2p_total": 2
     }
    }
   }

@@ -7,8 +7,27 @@
 <meta name="description" content="Step through a recorded SWE-bench run: an agentic loop and an agentless pipeline on the same ten real GitHub issues.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>&#9654;</text></svg>">
 <link rel="stylesheet" href="style.css">
+<script>
+  // Before first paint, so switching or reloading never flashes another theme.
+  try {
+    var s = new URLSearchParams(location.search).get("style")
+         || localStorage.getItem("replay-style") || "console";
+    document.documentElement.dataset.style =
+      ["terminal", "editorial", "console"].indexOf(s) >= 0 ? s : "console";
+  } catch (e) { document.documentElement.dataset.style = "console"; }
+</script>
 </head>
 <body>
+
+<div class="switcher" role="group" aria-label="Page style">
+  <span>Look</span>
+  <button type="button" data-set-style="console">Console</button>
+  <button type="button" data-set-style="terminal">Terminal</button>
+  <button type="button" data-set-style="editorial">Editorial</button>
+  <span class="aside" style="text-transform:none;letter-spacing:0;font-weight:400">
+    — three options; pick one and it is remembered.
+  </span>
+</div>
 <header class="top">
   <h1>CodePilot-SWE <span class="sub">recorded run</span></h1>
   <p class="lede">
@@ -47,7 +66,15 @@
 
 <section aria-labelledby="inst-h">
   <h2 id="inst-h">The ten instances</h2>
-  <p class="hint">Pick one to replay both arms side by side.</p>
+  <p class="hint">Pick one to replay both arms side by side. The strip shows how the
+    agent spent its recorded steps on that instance.</p>
+  <p class="legend">
+    <span><i style="background:var(--accent)"></i>tool call</span>
+    <span><i style="background:var(--accent-2)"></i>result</span>
+    <span><i style="background:var(--muted)"></i>reasoning</span>
+    <span><i style="background:var(--warn)"></i>budget / finished</span>
+    <span><i style="background:var(--lose)"></i>error</span>
+  </p>
   <div id="instances" class="instances"></div>
 </section>
 

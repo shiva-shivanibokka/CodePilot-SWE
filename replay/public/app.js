@@ -32,7 +32,20 @@ const runCache = new Map();
 let index = null;
 let openInstance = null;
 
+initSwitcher();
 init();
+
+function initSwitcher() {
+  const buttons = document.querySelectorAll("[data-set-style]");
+  const sync = () => buttons.forEach((b) =>
+    b.setAttribute("aria-pressed", String(b.dataset.setStyle === document.documentElement.dataset.style)));
+  buttons.forEach((b) => b.addEventListener("click", () => {
+    document.documentElement.dataset.style = b.dataset.setStyle;
+    try { localStorage.setItem("replay-style", b.dataset.setStyle); } catch { /* private window */ }
+    sync();
+  }));
+  sync();
+}
 
 async function init() {
   try {
@@ -49,22 +62,61 @@ async function init() {
 
 function renderTotals() {
   const wrap = el("div", "cards");
+  const maxCost = Math.max(...index.arms.map((a) => index.totals[a]?.cost_usd || 0));
+  const maxCalls = Math.max(...index.arms.map((a) => index.totals[a]?.model_calls || 0));
+
   for (const arm of index.arms) {
     const t = index.totals[arm];
     if (!t) continue;
     const perResolution = t.resolved ? t.cost_usd / t.resolved : null;
     const card = el("div", "card");
     card.append(el("h3", null, ARM_LABEL[arm] || arm));
-    card.append(el("div", "big", `${t.resolved} / ${t.runs} resolved`));
-    const dl = el("dl");
-    const add = (k, v) => { dl.append(el("dt", null, k)); dl.append(el("dd", null, v)); };
-    add("Model calls", String(t.model_calls));
-    add("Cost", fmtUsd(t.cost_usd));
-    add("Per resolution", perResolution === null ? "—" : fmtUsd(perResolution));
-    card.append(dl);
+
+    const big = el("div", "big");
+    big.append(document.createTextNode(String(t.resolved)));
+    big.append(el("em", null, ` / ${t.runs} resolved`));
+    card.append(big);
+
+    // Ten pips: filled where that arm resolved the instance. Same order as the
+    // list below, so the eye can match a pip to a row.
+    const pips = el("div", "pips");
+    for (const inst of index.instances) {
+      pips.append(el("i", `pip${inst.arms[arm]?.resolved ? " on" : ""}`));
+    }
+    card.append(pips);
+
+    card.append(bar("Cost", t.cost_usd, maxCost, fmtUsd(t.cost_usd)));
+    card.append(bar("Model calls", t.model_calls, maxCalls, String(t.model_calls)));
+    card.append(bar("Per resolution", perResolution || 0, maxCost,
+      perResolution === null ? "—" : fmtUsd(perResolution)));
     wrap.append(card);
   }
   $("#totals").replaceChildren(wrap);
+}
+
+function bar(label, value, max, text) {
+  const row = el("div", "barline");
+  row.append(el("div", "lab", label));
+  const track = el("div", "track");
+  const fill = el("div", "fill");
+  fill.style.width = `${max > 0 ? Math.max(2, (value / max) * 100) : 0}%`;
+  track.append(fill);
+  row.append(track);
+  row.append(el("div", "val", text));
+  return row;
+}
+
+// How an arm spent its recorded steps, as one stacked strip.
+function strip(kinds, total) {
+  const wrap = el("div", "strip");
+  if (!total) return wrap;
+  for (const [kind, n] of Object.entries(kinds || {})) {
+    const seg = el("i", `k-${kind}`);
+    seg.style.width = `${(n / total) * 100}%`;
+    seg.title = `${n} × ${KIND_LABEL[kind] || kind}`;
+    wrap.append(seg);
+  }
+  return wrap;
 }
 
 function badge(arm, info) {
@@ -87,6 +139,13 @@ function renderInstances() {
     left.append(el("div", "meta",
       `${inst.repo}${agent ? ` · ${agent.transcript_events} recorded steps · ${agent.model_calls} calls · ${fmtSec(agent.wall_seconds)}` : ""}`));
     row.append(left);
+
+    const act = el("div");
+    if (agent) {
+      act.append(strip(agent.kinds, agent.transcript_events));
+      act.append(el("div", "meta", `${agent.kinds?.tool_call || 0} tool calls · ${agent.changed_lines} lines changed`));
+    }
+    row.append(act);
 
     const badges = el("div", "badges");
     for (const arm of index.arms) badges.append(badge(arm, inst.arms[arm]));

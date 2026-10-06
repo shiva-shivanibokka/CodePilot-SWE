@@ -94,6 +94,12 @@ def main() -> int:
             json.dumps(run, indent=1, sort_keys=True), encoding="utf-8"
         )
 
+        # Per-kind counts travel in the index so the instance list can draw an
+        # activity strip without fetching all twenty run files to count events.
+        kinds: dict[str, int] = {}
+        for ev in r.get("transcript") or []:
+            kinds[ev.get("kind") or "step"] = kinds.get(ev.get("kind") or "step", 0) + 1
+
         slot = summary.setdefault(iid, {"instance_id": iid, "repo": r.get("repo", ""), "arms": {}})
         slot["arms"][arm] = {
             "resolved": bool(r.get("resolved")),
@@ -102,6 +108,10 @@ def main() -> int:
             "model_calls": r.get("model_calls", 0),
             "wall_seconds": r.get("wall_seconds", 0.0),
             "transcript_events": len(r.get("transcript") or []),
+            "changed_lines": r.get("changed_lines", 0),
+            "kinds": kinds,
+            "f2p_passed": (grade or {}).get("f2p_passed", 0),
+            "f2p_total": (grade or {}).get("f2p_total", 0),
         }
         t = totals.setdefault(arm, {"resolved": 0, "runs": 0, "model_calls": 0, "cost_usd": 0.0})
         t["runs"] += 1
