@@ -1,0 +1,62 @@
+{
+ "arm": "agentless",
+ "cache_read_tokens": 0,
+ "cache_write_tokens": 10800,
+ "changed_lines": 0,
+ "contamination": [],
+ "cost_usd": 0.016558,
+ "diff": "",
+ "error": "",
+ "grade": {
+  "applied": false,
+  "command": "",
+  "detail": "no source changes to grade",
+  "exit_code": null,
+  "f2p_passed": 0,
+  "f2p_total": 0,
+  "p2p_passed": 0,
+  "p2p_total": 0,
+  "resolved": false
+ },
+ "infra_error": false,
+ "input_tokens": 3,
+ "instance_id": "sympy__sympy-21171",
+ "model": "claude-haiku-4-5-20251001",
+ "model_calls": 1,
+ "notes": [
+  "sample 1 rejected: context overflow: prompt bound exceeded (~51302 tokens estimated > 50000); not sent"
+ ],
+ "output_tokens": 611,
+ "repo": "sympy/sympy",
+ "resolved": false,
+ "selection_basis": "no candidates",
+ "stopped_by": [
+  "0 of 1 samples usable"
+ ],
+ "submitted": false,
+ "timestamp": "2026-10-05T15:38:51.073613+00:00",
+ "transcript": [
+  {
+   "files": [
+    "sympy/printing/latex.py"
+   ],
+   "kind": "localize",
+   "locations": [
+    {
+     "class_name": "LatexPrinter",
+     "file": "sympy/printing/latex.py",
+     "function_name": "_print_SingularityFunction",
+     "reason": "This method is called with an 'exp' keyword argument from _print_Pow when the base is a Function, but it doesn't accept this parameter"
+    }
+   ]
+  },
+  {
+   "index": 0,
+   "kind": "sample",
+   "path": "sympy/printing/latex.py",
+   "text": "context overflow: prompt bound exceeded (~51302 tokens estimated > 50000); not sent",
+   "usable": false
+  }
+ ],
+ "wall_seconds": 6.2
+}

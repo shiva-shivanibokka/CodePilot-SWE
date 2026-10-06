@@ -1,0 +1,73 @@
+{
+ "arm": "agentless",
+ "cache_read_tokens": 0,
+ "cache_write_tokens": 5588,
+ "changed_lines": 4,
+ "contamination": [],
+ "cost_usd": 0.015606,
+ "diff": "diff --git a/django/db/migrations/recorder.py b/django/db/migrations/recorder.py\nindex 1a37c6b..1847ae3 100644\n--- a/django/db/migrations/recorder.py\n+++ b/django/db/migrations/recorder.py\n@@ -62,6 +62,10 @@ class MigrationRecorder:\n         # in the codebase.\n         if self.has_table():\n             return\n+        # Check if migrations are allowed on this database\n+        from django.db import router\n+        if not router.allow_migrate(self.connection.alias, self.Migration):\n+            return\n         # Make the table\n         try:\n             with self.connection.schema_editor() as editor:\n",
+ "error": "",
+ "grade": {
+  "applied": true,
+  "command": "python tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 backends.base.test_creation migrations.test_executor",
+  "detail": "",
+  "exit_code": 1,
+  "f2p_passed": 0,
+  "f2p_total": 2,
+  "p2p_passed": 34,
+  "p2p_total": 34,
+  "resolved": false
+ },
+ "infra_error": false,
+ "input_tokens": 1641,
+ "instance_id": "django__django-15252",
+ "model": "claude-haiku-4-5-20251001",
+ "model_calls": 2,
+ "notes": [],
+ "output_tokens": 1396,
+ "repo": "django/django",
+ "resolved": false,
+ "selection_basis": "single attempt, no selection",
+ "stopped_by": [
+  "1 of 1 samples usable"
+ ],
+ "submitted": true,
+ "timestamp": "2026-10-05T15:27:40.036389+00:00",
+ "transcript": [
+  {
+   "files": [
+    "django/db/migrations/recorder.py",
+    "django/db/migrations/executor.py"
+   ],
+   "kind": "localize",
+   "locations": [
+    {
+     "class_name": "MigrationRecorder",
+     "file": "django/db/migrations/recorder.py",
+     "function_name": "ensure_schema",
+     "reason": "ensure_schema() creates migration table without checking allow_migrate rules"
+    },
+    {
+     "class_name": "MigrationRecorder",
+     "file": "django/db/migrations/recorder.py",
+     "function_name": "record_applied",
+     "reason": "record_applied() calls ensure_schema() without checking allow_migrate rules"
+    },
+    {
+     "class_name": "MigrationRecorder",
+     "file": "django/db/migrations/recorder.py",
+     "function_name": "record_unapplied",
+     "reason": "record_unapplied() may access migration table without checking allow_migrate rules"
+    }
+   ]
+  },
+  {
+   "index": 0,
+   "kind": "sample",
+   "path": "django/db/migrations/recorder.py",
+   "text": "Add a check in ensure_schema() to respect db_router.allow_migrate() rules by returning early if migrations are not allowed on the current database",
+   "usable": true
+  }
+ ],
+ "wall_seconds": 23.7
+}

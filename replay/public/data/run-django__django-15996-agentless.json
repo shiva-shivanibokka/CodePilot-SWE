@@ -1,0 +1,60 @@
+{
+ "arm": "agentless",
+ "cache_read_tokens": 0,
+ "cache_write_tokens": 5343,
+ "changed_lines": 12,
+ "contamination": [],
+ "cost_usd": 0.016668,
+ "diff": "diff --git a/django/db/migrations/serializer.py b/django/db/migrations/serializer.py\nindex 38da1e6..3354562 100644\n--- a/django/db/migrations/serializer.py\n+++ b/django/db/migrations/serializer.py\n@@ -125,6 +125,18 @@ class EnumSerializer(BaseSerializer):\n     def serialize(self):\n         enum_class = self.value.__class__\n         module = enum_class.__module__\n+        if self.value.name is not None:\n+            return (\n+                \"%s.%s[%r]\" % (module, enum_class.__qualname__, self.value.name),\n+                {\"import %s\" % module},\n+            )\n+        # Handle combined flags by decomposing and ORing them together\n+        members, _ = enum._decompose(enum_class, self.value._value_)\n+        imports = {\"import %s\" % module}\n+        if members:\n+            member_names = [\"%s.%s.%s\" % (module, enum_class.__qualname__, m.name) for m in members]\n+            return \" | \".join(member_names), imports\n+        # Fallback for edge cases\n         return (\n             \"%s.%s[%r]\" % (module, enum_class.__qualname__, self.value.name),\n             {\"import %s\" % module},\n",
+ "error": "",
+ "grade": {
+  "applied": true,
+  "command": "python tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 migrations.test_writer",
+  "detail": "",
+  "exit_code": 1,
+  "f2p_passed": 0,
+  "f2p_total": 1,
+  "p2p_passed": 51,
+  "p2p_total": 51,
+  "resolved": false
+ },
+ "infra_error": false,
+ "input_tokens": 4044,
+ "instance_id": "django__django-15996",
+ "model": "claude-haiku-4-5-20251001",
+ "model_calls": 2,
+ "notes": [],
+ "output_tokens": 1189,
+ "repo": "django/django",
+ "resolved": false,
+ "selection_basis": "single attempt, no selection",
+ "stopped_by": [
+  "1 of 1 samples usable"
+ ],
+ "submitted": true,
+ "timestamp": "2026-10-05T15:26:28.684715+00:00",
+ "transcript": [
+  {
+   "files": [
+    "django/db/migrations/serializer.py"
+   ],
+   "kind": "localize",
+   "locations": [
+    {
+     "class_name": "EnumSerializer",
+     "file": "django/db/migrations/serializer.py",
+     "function_name": "serialize",
+     "reason": "This is where enum values are serialized for migrations. It currently uses .name attribute which fails for combined flags. Needs to handle enum._decompose() for flag combinations."
+    }
+   ]
+  },
+  {
+   "index": 0,
+   "kind": "sample",
+   "path": "django/db/migrations/serializer.py",
+   "text": "Handle serialization of combined enum flags by using enum._decompose() when a single name doesn't exist, then construct an OR expression of the individual flags.",
+   "usable": true
+  }
+ ],
+ "wall_seconds": 14.7
+}

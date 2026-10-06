@@ -1,0 +1,46 @@
+{
+ "arm": "agentless",
+ "cache_read_tokens": 0,
+ "cache_write_tokens": 5317,
+ "changed_lines": 0,
+ "contamination": [],
+ "cost_usd": 0.009124,
+ "diff": "",
+ "error": "",
+ "grade": {
+  "applied": false,
+  "command": "",
+  "detail": "no source changes to grade",
+  "exit_code": null,
+  "f2p_passed": 0,
+  "f2p_total": 0,
+  "p2p_passed": 0,
+  "p2p_total": 0,
+  "resolved": false
+ },
+ "infra_error": false,
+ "input_tokens": 3,
+ "instance_id": "django__django-12308",
+ "model": "claude-haiku-4-5-20251001",
+ "model_calls": 1,
+ "notes": [
+  "localisation named no file that exists in the repository"
+ ],
+ "output_tokens": 495,
+ "repo": "django/django",
+ "resolved": false,
+ "selection_basis": "no candidates",
+ "stopped_by": [
+  "0 of 1 samples usable"
+ ],
+ "submitted": false,
+ "timestamp": "2026-10-05T15:48:29.302870+00:00",
+ "transcript": [
+  {
+   "files": [],
+   "kind": "localize",
+   "locations": []
+  }
+ ],
+ "wall_seconds": 6.7
+}

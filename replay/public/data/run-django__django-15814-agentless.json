@@ -1,0 +1,68 @@
+{
+ "arm": "agentless",
+ "cache_read_tokens": 0,
+ "cache_write_tokens": 36760,
+ "changed_lines": 0,
+ "contamination": [],
+ "cost_usd": 0.051576,
+ "diff": "",
+ "error": "",
+ "grade": {
+  "applied": false,
+  "command": "",
+  "detail": "no source changes to grade",
+  "exit_code": null,
+  "f2p_passed": 0,
+  "f2p_total": 0,
+  "p2p_passed": 0,
+  "p2p_total": 0,
+  "resolved": false
+ },
+ "infra_error": false,
+ "input_tokens": 6,
+ "instance_id": "django__django-15814",
+ "model": "claude-haiku-4-5-20251001",
+ "model_calls": 2,
+ "notes": [
+  "sample 1 rejected: 'search' does not appear in the file"
+ ],
+ "output_tokens": 1124,
+ "repo": "django/django",
+ "resolved": false,
+ "selection_basis": "no candidates",
+ "stopped_by": [
+  "0 of 1 samples usable"
+ ],
+ "submitted": false,
+ "timestamp": "2026-10-05T15:13:30.836144+00:00",
+ "transcript": [
+  {
+   "files": [
+    "django/db/models/sql/query.py"
+   ],
+   "kind": "localize",
+   "locations": [
+    {
+     "class_name": null,
+     "file": "django/db/models/sql/query.py",
+     "function_name": "deferred_to_data",
+     "reason": "This function processes the only() fields and needs to use concrete_model._meta when dealing with proxy models to correctly map field names to the actual database columns"
+    },
+    {
+     "class_name": null,
+     "file": "django/db/models/sql/query.py",
+     "function_name": "get_loaded_field_names",
+     "reason": "This function retrieves loaded field names and should use concrete_model._meta for proxy models to ensure correct field resolution"
+    }
+   ]
+  },
+  {
+   "index": 0,
+   "kind": "sample",
+   "path": "django/db/models/sql/query.py",
+   "text": "'search' does not appear in the file",
+   "usable": false
+  }
+ ],
+ "wall_seconds": 15.4
+}

@@ -1,0 +1,67 @@
+{
+ "arm": "agentless",
+ "cache_read_tokens": 0,
+ "cache_write_tokens": 34647,
+ "changed_lines": 4,
+ "contamination": [],
+ "cost_usd": 0.049035,
+ "diff": "diff --git a/sympy/utilities/iterables.py b/sympy/utilities/iterables.py\nindex dd36dea..cf7e141 100644\n--- a/sympy/utilities/iterables.py\n+++ b/sympy/utilities/iterables.py\n@@ -1802,9 +1802,9 @@ def partitions(n, m=None, k=None, size=False):\n         keys.append(r)\n     room = m - q - bool(r)\n     if size:\n-        yield sum(ms.values()), ms\n+        yield sum(ms.values()), ms.copy()\n     else:\n-        yield ms\n+        yield ms.copy()\n \n     while keys != [1]:\n         # Reuse any 1's.\n",
+ "error": "",
+ "grade": {
+  "applied": true,
+  "command": "python -m pytest -rA -v -p no:cacheprovider --tb=short \"sympy/utilities/tests/test_iterables.py\"",
+  "detail": "",
+  "exit_code": 1,
+  "f2p_passed": 0,
+  "f2p_total": 2,
+  "p2p_passed": 40,
+  "p2p_total": 40,
+  "resolved": false
+ },
+ "infra_error": false,
+ "input_tokens": 6,
+ "instance_id": "sympy__sympy-20154",
+ "model": "claude-haiku-4-5-20251001",
+ "model_calls": 2,
+ "notes": [],
+ "output_tokens": 1144,
+ "repo": "sympy/sympy",
+ "resolved": false,
+ "selection_basis": "single attempt, no selection",
+ "stopped_by": [
+  "1 of 1 samples usable"
+ ],
+ "submitted": true,
+ "timestamp": "2026-10-05T15:39:44.263177+00:00",
+ "transcript": [
+  {
+   "files": [
+    "sympy/utilities/iterables.py",
+    "sympy/utilities/tests/test_iterables.py"
+   ],
+   "kind": "localize",
+   "locations": [
+    {
+     "class_name": null,
+     "file": "sympy/utilities/iterables.py",
+     "function_name": "partitions",
+     "reason": "Main function that reuses output dictionaries instead of copying them before yielding"
+    },
+    {
+     "class_name": null,
+     "file": "sympy/utilities/tests/test_iterables.py",
+     "function_name": "test_partitions",
+     "reason": "Test file that may need updates to verify the fix works correctly"
+    }
+   ]
+  },
+  {
+   "index": 0,
+   "kind": "sample",
+   "path": "sympy/utilities/iterables.py",
+   "text": "Copy the dictionary before yielding it in the partitions() function to prevent reuse of the same dictionary object, which causes confusion when collecting results.",
+   "usable": true
+  }
+ ],
+ "wall_seconds": 21.8
+}

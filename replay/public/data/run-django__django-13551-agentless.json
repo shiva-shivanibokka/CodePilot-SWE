@@ -1,0 +1,74 @@
+{
+ "arm": "agentless",
+ "cache_read_tokens": 0,
+ "cache_write_tokens": 5290,
+ "changed_lines": 2,
+ "contamination": [],
+ "cost_usd": 0.015628,
+ "diff": "diff --git a/django/contrib/auth/tokens.py b/django/contrib/auth/tokens.py\nindex 93e2d71..1e84580 100644\n--- a/django/contrib/auth/tokens.py\n+++ b/django/contrib/auth/tokens.py\n@@ -94,7 +94,7 @@ class PasswordResetTokenGenerator:\n         # Truncate microseconds so that tokens are consistent even if the\n         # database doesn't support microseconds.\n         login_timestamp = '' if user.last_login is None else user.last_login.replace(microsecond=0, tzinfo=None)\n-        return str(user.pk) + user.password + str(login_timestamp) + str(timestamp)\n+        return str(user.pk) + user.password + str(login_timestamp) + str(timestamp) + (user.email or '')\n \n     def _num_seconds(self, dt):\n         return int((dt - datetime(2001, 1, 1)).total_seconds())\n",
+ "error": "",
+ "grade": {
+  "applied": true,
+  "command": "python tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 auth_tests.models.__init__ auth_tests.models.with_custom_email_field auth_tests.test_models auth_tests.test_tokens",
+  "detail": "",
+  "exit_code": 1,
+  "f2p_passed": 1,
+  "f2p_total": 2,
+  "p2p_passed": 56,
+  "p2p_total": 56,
+  "resolved": false
+ },
+ "infra_error": false,
+ "input_tokens": 1585,
+ "instance_id": "django__django-13551",
+ "model": "claude-haiku-4-5-20251001",
+ "model_calls": 2,
+ "notes": [],
+ "output_tokens": 1486,
+ "repo": "django/django",
+ "resolved": false,
+ "selection_basis": "single attempt, no selection",
+ "stopped_by": [
+  "1 of 1 samples usable"
+ ],
+ "submitted": true,
+ "timestamp": "2026-10-05T15:49:33.085207+00:00",
+ "transcript": [
+  {
+   "files": [
+    "django/contrib/auth/tokens.py",
+    "django/contrib/auth/models.py",
+    "django/contrib/auth/base_user.py"
+   ],
+   "kind": "localize",
+   "locations": [
+    {
+     "class_name": "PasswordResetTokenGenerator",
+     "file": "django/contrib/auth/tokens.py",
+     "function_name": "_make_hash_value",
+     "reason": "This method generates the hash for password reset tokens and needs to include the user's email address to invalidate tokens when email changes"
+    },
+    {
+     "class_name": "AbstractBaseUser",
+     "file": "django/contrib/auth/base_user.py",
+     "function_name": "get_session_auth_hash",
+     "reason": "May need to review or create similar method for token generation as suggested in the issue"
+    },
+    {
+     "class_name": "User",
+     "file": "django/contrib/auth/models.py",
+     "function_name": null,
+     "reason": "May need to verify User model implementation and email field handling"
+    }
+   ]
+  },
+  {
+   "index": 0,
+   "kind": "sample",
+   "path": "django/contrib/auth/tokens.py",
+   "text": "Add user's email address to the password reset token hash value so that changing email invalidates existing password reset tokens",
+   "usable": true
+  }
+ ],
+ "wall_seconds": 22.0
+}

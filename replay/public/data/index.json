@@ -1,0 +1,287 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "seed": 0,
+ "attempts": 1,
+ "max_calls": 60,
+ "backend": "local",
+ "arms": [
+  "agent",
+  "agentless"
+ ],
+ "totals": {
+  "agentless": {
+   "resolved": 1,
+   "runs": 10,
+   "model_calls": 18,
+   "cost_usd": 0.262982
+  },
+  "agent": {
+   "resolved": 5,
+   "runs": 10,
+   "model_calls": 542,
+   "cost_usd": 2.253544
+  }
+ },
+ "instances": [
+  {
+   "instance_id": "django__django-15814",
+   "repo": "django/django",
+   "arms": {
+    "agentless": {
+     "resolved": false,
+     "stopped_by": [
+      "0 of 1 samples usable"
+     ],
+     "cost_usd": 0.051576,
+     "model_calls": 2,
+     "wall_seconds": 15.4,
+     "transcript_events": 2
+    },
+    "agent": {
+     "resolved": true,
+     "stopped_by": [
+      "budget"
+     ],
+     "cost_usd": 0.325708,
+     "model_calls": 62,
+     "wall_seconds": 257.4,
+     "transcript_events": 161
+    }
+   }
+  },
+  {
+   "instance_id": "django__django-13401",
+   "repo": "django/django",
+   "arms": {
+    "agentless": {
+     "resolved": false,
+     "stopped_by": [
+      "1 of 1 samples usable"
+     ],
+     "cost_usd": 0.043625,
+     "model_calls": 2,
+     "wall_seconds": 25.1,
+     "transcript_events": 2
+    },
+    "agent": {
+     "resolved": false,
+     "stopped_by": [
+      "step limit"
+     ],
+     "cost_usd": 0.220555,
+     "model_calls": 62,
+     "wall_seconds": 190.7,
+     "transcript_events": 157
+    }
+   }
+  },
+  {
+   "instance_id": "django__django-15996",
+   "repo": "django/django",
+   "arms": {
+    "agent": {
+     "resolved": true,
+     "stopped_by": [
+      "budget"
+     ],
+     "cost_usd": 0.24447,
+     "model_calls": 60,
+     "wall_seconds": 197.4,
+     "transcript_events": 162
+    },
+    "agentless": {
+     "resolved": false,
+     "stopped_by": [
+      "1 of 1 samples usable"
+     ],
+     "cost_usd": 0.016668,
+     "model_calls": 2,
+     "wall_seconds": 14.7,
+     "transcript_events": 2
+    }
+   }
+  },
+  {
+   "instance_id": "django__django-15252",
+   "repo": "django/django",
+   "arms": {
+    "agentless": {
+     "resolved": false,
+     "stopped_by": [
+      "1 of 1 samples usable"
+     ],
+     "cost_usd": 0.015606,
+     "model_calls": 2,
+     "wall_seconds": 23.7,
+     "transcript_events": 2
+    },
+    "agent": {
+     "resolved": false,
+     "stopped_by": [
+      "budget"
+     ],
+     "cost_usd": 0.261819,
+     "model_calls": 62,
+     "wall_seconds": 251.0,
+     "transcript_events": 171
+    }
+   }
+  },
+  {
+   "instance_id": "django__django-15851",
+   "repo": "django/django",
+   "arms": {
+    "agentless": {
+     "resolved": false,
+     "stopped_by": [
+      "0 of 1 samples usable"
+     ],
+     "cost_usd": 0.019175,
+     "model_calls": 2,
+     "wall_seconds": 19.2,
+     "transcript_events": 2
+    },
+    "agent": {
+     "resolved": true,
+     "stopped_by": [
+      "finished"
+     ],
+     "cost_usd": 0.2313,
+     "model_calls": 62,
+     "wall_seconds": 143.8,
+     "transcript_events": 161
+    }
+   }
+  },
+  {
+   "instance_id": "sympy__sympy-21171",
+   "repo": "sympy/sympy",
+   "arms": {
+    "agent": {
+     "resolved": false,
+     "stopped_by": [
+      "finished"
+     ],
+     "cost_usd": 0.190413,
+     "model_calls": 48,
+     "wall_seconds": 168.5,
+     "transcript_events": 130
+    },
+    "agentless": {
+     "resolved": false,
+     "stopped_by": [
+      "0 of 1 samples usable"
+     ],
+     "cost_usd": 0.016558,
+     "model_calls": 1,
+     "wall_seconds": 6.2,
+     "transcript_events": 2
+    }
+   }
+  },
+  {
+   "instance_id": "sympy__sympy-20154",
+   "repo": "sympy/sympy",
+   "arms": {
+    "agentless": {
+     "resolved": false,
+     "stopped_by": [
+      "1 of 1 samples usable"
+     ],
+     "cost_usd": 0.049035,
+     "model_calls": 2,
+     "wall_seconds": 21.8,
+     "transcript_events": 2
+    },
+    "agent": {
+     "resolved": true,
+     "stopped_by": [
+      "finished"
+     ],
+     "cost_usd": 0.18625,
+     "model_calls": 37,
+     "wall_seconds": 182.4,
+     "transcript_events": 102
+    }
+   }
+  },
+  {
+   "instance_id": "sympy__sympy-23117",
+   "repo": "sympy/sympy",
+   "arms": {
+    "agentless": {
+     "resolved": true,
+     "stopped_by": [
+      "1 of 1 samples usable"
+     ],
+     "cost_usd": 0.025987,
+     "model_calls": 2,
+     "wall_seconds": 23.7,
+     "transcript_events": 2
+    },
+    "agent": {
+     "resolved": true,
+     "stopped_by": [
+      "finished"
+     ],
+     "cost_usd": 0.131392,
+     "model_calls": 32,
+     "wall_seconds": 92.2,
+     "transcript_events": 90
+    }
+   }
+  },
+  {
+   "instance_id": "django__django-12308",
+   "repo": "django/django",
+   "arms": {
+    "agent": {
+     "resolved": false,
+     "stopped_by": [
+      "budget"
+     ],
+     "cost_usd": 0.234552,
+     "model_calls": 60,
+     "wall_seconds": 136.5,
+     "transcript_events": 155
+    },
+    "agentless": {
+     "resolved": false,
+     "stopped_by": [
+      "0 of 1 samples usable"
+     ],
+     "cost_usd": 0.009124,
+     "model_calls": 1,
+     "wall_seconds": 6.7,
+     "transcript_events": 1
+    }
+   }
+  },
+  {
+   "instance_id": "django__django-13551",
+   "repo": "django/django",
+   "arms": {
+    "agentless": {
+     "resolved": false,
+     "stopped_by": [
+      "1 of 1 samples usable"
+     ],
+     "cost_usd": 0.015628,
+     "model_calls": 2,
+     "wall_seconds": 22.0,
+     "transcript_events": 2
+    },
+    "agent": {
+     "resolved": false,
+     "stopped_by": [
+      "finished"
+     ],
+     "cost_usd": 0.227085,
+     "model_calls": 57,
+     "wall_seconds": 135.8,
+     "transcript_events": 143
+    }
+   }
+  }
+ ]
+}

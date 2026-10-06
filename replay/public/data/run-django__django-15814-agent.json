@@ -1,0 +1,860 @@
+{
+ "arm": "agent",
+ "cache_read_tokens": 1079891,
+ "cache_write_tokens": 101681,
+ "changed_lines": 158,
+ "contamination": [],
+ "cost_usd": 0.325708,
+ "diff": "diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py\nindex 33cc636..cf7566d 100644\n--- a/django/db/models/sql/query.py\n+++ b/django/db/models/sql/query.py\n@@ -748,6 +748,7 @@ class Query(BaseExpression):\n                     cur_model = source.related_model\n                 else:\n                     cur_model = source.remote_field.model\n+                cur_model = cur_model._meta.concrete_model\n                 opts = cur_model._meta\n                 # Even if we're \"just passing through\" this model, we must add\n                 # both the current model's pk and the related reference field\ndiff --git a/test_proxy_issue.py b/test_proxy_issue.py\nnew file mode 100644\nindex 0000000..0cb4c84\n--- /dev/null\n+++ b/test_proxy_issue.py\n@@ -0,0 +1,30 @@\n+#!/usr/bin/env python\n+import os\n+import sys\n+import django\n+\n+# Setup Django\n+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tests.settings')\n+sys.path.insert(0, os.path.dirname(__file__))\n+\n+django.setup()\n+\n+from tests.proxy_models.models import Issue, ProxyTrackerUser, BaseUser, TrackerUser\n+\n+# Create test data\n+base_user = BaseUser.objects.create(name=\"Base User\")\n+tracker_user = TrackerUser.objects.create(name=\"Tracker User\", status=\"active\")\n+proxy_tracker_user = ProxyTrackerUser.objects.create(name=\"Proxy Tracker User\", status=\"active\")\n+\n+issue = Issue.objects.create(summary=\"Test Issue\", assignee=proxy_tracker_user)\n+\n+# Try the problematic query\n+print(\"Testing select_related + only with proxy model...\")\n+try:\n+    result = list(Issue.objects.select_related(\"assignee\").only(\"assignee__name\").all())\n+    print(\"SUCCESS: Query executed without error\")\n+    print(f\"Result: {result}\")\n+except ValueError as e:\n+    print(f\"ERROR: {e}\")\n+    import traceback\n+    traceback.print_exc()\ndiff --git a/test_proxy_select_related_only.py b/test_proxy_select_related_only.py\nnew file mode 100644\nindex 0000000..ee06e25\n--- /dev/null\n+++ b/test_proxy_select_related_only.py\n@@ -0,0 +1,53 @@\n+#!/usr/bin/env python\n+import os\n+import sys\n+import django\n+\n+# Setup Django\n+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tests.settings')\n+sys.path.insert(0, os.path.dirname(__file__))\n+\n+# Configure Django settings\n+from django.conf import settings\n+if not settings.configured:\n+    settings.configure(\n+        DEBUG=True,\n+        DATABASES={\n+            'default': {\n+                'ENGINE': 'django.db.backends.sqlite3',\n+                'NAME': ':memory:',\n+            }\n+        },\n+        INSTALLED_APPS=[\n+            'django.contrib.contenttypes',\n+            'django.contrib.auth',\n+            'tests.proxy_models',\n+        ],\n+        USE_TZ=True,\n+    )\n+\n+django.setup()\n+\n+from django.core.management import call_command\n+from tests.proxy_models.models import Issue, ProxyTrackerUser, BaseUser, TrackerUser\n+\n+# Create tables\n+call_command('migrate', verbosity=0, interactive=False)\n+\n+# Create test data\n+base_user = BaseUser.objects.create(name=\"Base User\")\n+tracker_user = TrackerUser.objects.create(name=\"Tracker User\", status=\"active\")\n+proxy_tracker_user = ProxyTrackerUser.objects.create(name=\"Proxy Tracker User\", status=\"active\")\n+\n+issue = Issue.objects.create(summary=\"Test Issue\", assignee=proxy_tracker_user)\n+\n+# Try the problematic query\n+print(\"Testing select_related + only with proxy model...\")\n+try:\n+    result = list(Issue.objects.select_related(\"assignee\").only(\"assignee__name\").all())\n+    print(\"SUCCESS: Query executed without error\")\n+    print(f\"Result: {result}\")\n+except ValueError as e:\n+    print(f\"ERROR: {e}\")\n+    import traceback\n+    traceback.print_exc()\ndiff --git a/tests/default_1.sqlite3 b/tests/default_1.sqlite3\nnew file mode 100644\nindex 0000000000000000000000000000000000000000..62b0694709c3d4a7168c5b912defccd402921e69\nGIT binary patch\nliteral 217088\n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\nORV^$umpKbcaQOc?CC>E#\n\nliteral 0\nHcmV?d00001\n\ndiff --git a/tests/default_2.sqlite3 b/tests/default_2.sqlite3\nnew file mode 100644\nindex 0000000000000000000000000000000000000000..62b0694709c3d4a7168c5b912defccd402921e69\nGIT binary patch\nliteral 217088\n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\nORV^$umpKbcaQOc?CC>E#\n\nliteral 0\nHcmV?d00001\n\ndiff --git a/tests/other_1.sqlite3 b/tests/other_1.sqlite3\nnew file mode 100644\nindex 0000000..e69de29\ndiff --git a/tests/other_2.sqlite3 b/tests/other_2.sqlite3\nnew file mode 100644\nindex 0000000..e69de29\ndiff --git a/tests/proxy_models/test_select_related_only.py b/tests/proxy_models/test_select_related_only.py\nnew file mode 100644\nindex 0000000..835cd8f\n--- /dev/null\n+++ b/tests/proxy_models/test_select_related_only.py\n@@ -0,0 +1,98 @@\n+from django.test import TestCase\n+from .models import (\n+    Issue,\n+    ProxyTrackerUser,\n+    BaseUser,\n+    TrackerUser,\n+    Improvement,\n+    ProxyProxyBug,\n+    Bug,\n+)\n+\n+\n+class ProxySelectRelatedOnlyTests(TestCase):\n+    def test_select_related_only_with_proxy_model(self):\n+        \"\"\"\n+        Test that select_related() followed by only() works with proxy models.\n+        This is a regression test for the issue where using select_related()\n+        and only() together on a proxy model would raise a ValueError.\n+        \"\"\"\n+        # Create test data\n+        base_user = BaseUser.objects.create(name=\"Base User\")\n+        tracker_user = TrackerUser.objects.create(name=\"Tracker User\", status=\"active\")\n+        proxy_tracker_user = ProxyTrackerUser.objects.create(\n+            name=\"Proxy Tracker User\", status=\"active\"\n+        )\n+\n+        issue = Issue.objects.create(summary=\"Test Issue\", assignee=proxy_tracker_user)\n+\n+        # This should not raise a ValueError\n+        result = list(\n+            Issue.objects.select_related(\"assignee\").only(\"assignee__name\").all()\n+        )\n+        self.assertEqual(len(result), 1)\n+        self.assertEqual(result[0].summary, \"Test Issue\")\n+        self.assertEqual(result[0].assignee.name, \"Proxy Tracker User\")\n+\n+    def test_select_related_only_with_proxy_of_proxy_model(self):\n+        \"\"\"\n+        Test that select_related() followed by only() works with proxy of proxy models.\n+        This is a regression test for the issue where using select_related()\n+        and only() together on a proxy of proxy model would raise a ValueError.\n+        \"\"\"\n+        # Create test data\n+        base_user = BaseUser.objects.create(name=\"Base User\")\n+        proxy_tracker_user = ProxyTrackerUser.objects.create(\n+            name=\"Proxy Tracker User\", status=\"active\"\n+        )\n+        proxy_proxy_bug = ProxyProxyBug.objects.create(\n+            summary=\"Test Bug\",\n+            assignee=proxy_tracker_user,\n+            version=\"1.0\",\n+            reporter=base_user,\n+        )\n+\n+        improvement = Improvement.objects.create(\n+            summary=\"Test Improvement\",\n+            assignee=proxy_tracker_user,\n+            version=\"1.0\",\n+            reporter=proxy_tracker_user,\n+            associated_bug=proxy_proxy_bug,\n+        )\n+\n+        # This should not raise a ValueError\n+        result = list(\n+            Improvement.objects.select_related(\"associated_bug\").only(\n+                \"associated_bug__summary\"\n+            ).all()\n+        )\n+        self.assertEqual(len(result), 1)\n+        self.assertEqual(result[0].summary, \"Test Improvement\")\n+        self.assertEqual(result[0].associated_bug.summary, \"Test Bug\")\n+\n+    def test_select_related_only_with_proxy_model_fk(self):\n+        \"\"\"\n+        Test that select_related() followed by only() works when the FK\n+        points to a proxy model.\n+        \"\"\"\n+        # Create test data\n+        base_user = BaseUser.objects.create(name=\"Base User\")\n+        proxy_tracker_user = ProxyTrackerUser.objects.create(\n+            name=\"Proxy Tracker User\", status=\"active\"\n+        )\n+\n+        # Bug has a FK to ProxyTrackerUser (through Issue)\n+        bug = Bug.objects.create(\n+            summary=\"Test Bug\",\n+            assignee=proxy_tracker_user,\n+            version=\"1.0\",\n+            reporter=base_user,\n+        )\n+\n+        # This should not raise a ValueError\n+        result = list(\n+            Bug.objects.select_related(\"assignee\").only(\"assignee__name\").all()\n+        )\n+        self.assertEqual(len(result), 1)\n+        self.assertEqual(result[0].summary, \"Test Bug\")\n+        self.assertEqual(result[0].assignee.name, \"Proxy Tracker User\")\n",
+ "error": "",
+ "grade": {
+  "applied": true,
+  "command": "python tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 proxy_models.tests",
+  "detail": "",
+  "exit_code": 0,
+  "f2p_passed": 1,
+  "f2p_total": 1,
+  "p2p_passed": 29,
+  "p2p_total": 29,
+  "resolved": true
+ },
+ "infra_error": false,
+ "input_tokens": 6953,
+ "instance_id": "django__django-15814",
+ "model": "claude-haiku-4-5-20251001",
+ "model_calls": 62,
+ "notes": [],
+ "output_tokens": 16733,
+ "repo": "django/django",
+ "resolved": true,
+ "selection_basis": "single attempt, no selection",
+ "stopped_by": [
+  "budget"
+ ],
+ "submitted": true,
+ "timestamp": "2026-10-05T15:17:48.836548+00:00",
+ "transcript": [
+  {
+   "kind": "text",
+   "text": "I'll start by understanding the issue and exploring the repository structure."
+  },
+  {
+   "args": "{'command': 'find . -type f -name \"*.py\" | grep -E \"(query|models)\" | head -20'}",
+   "kind": "tool_call",
+   "tool": "run_command"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ find . -type f -name \"*.py\" | grep -E \"(query|models)\" | head -20",
+   "tool": "run_command"
+  },
+  {
+   "args": "{}",
+   "kind": "tool_call",
+   "tool": "list_files"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "6638 files:",
+   "tool": "list_files"
+  },
+  {
+   "kind": "text",
+   "text": "Now let me look at the specific file mentioned in the issue - django/db/models/sql/query.py around line 745:"
+  },
+  {
+   "args": "{'path': 'django/db/models/sql/query.py', 'start_line': 730, 'end_line': 760}",
+   "kind": "tool_call",
+   "tool": "read_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "django/db/models/sql/query.py (2694 lines, showing 730-760)",
+   "tool": "read_file"
+  },
+  {
+   "kind": "text",
+   "text": "I can see line 751 has `opts = cur_model._meta`. Let me look at more context to understand the issue better:"
+  },
+  {
+   "args": "{'path': 'django/db/models/sql/query.py', 'start_line': 720, 'end_line': 780}",
+   "kind": "tool_call",
+   "tool": "read_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "django/db/models/sql/query.py (2694 lines, showing 720-780)",
+   "tool": "read_file"
+  },
+  {
+   "kind": "text",
+   "text": "Now let me search for the issue in the query.py file related to the error traceback. The error mentions `get_related_populators` and `RelatedPopulator`:"
+  },
+  {
+   "args": "{'pattern': 'get_related_populators|RelatedPopulator', 'glob': 'django/db/models/query.py'}",
+   "kind": "tool_call",
+   "tool": "search"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "django/db/models/query.py:101: related_populators = get_related_populators(klass_info, select, db)",
+   "tool": "search"
+  },
+  {
+   "kind": "text",
+   "text": "Let me look at the `get_related_populators` function and `RelatedPopulator` class:"
+  },
+  {
+   "args": "{'path': 'django/db/models/query.py', 'start_line': 2620, 'end_line': 2650}",
+   "kind": "tool_call",
+   "tool": "read_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "django/db/models/query.py (2627 lines, showing 2620-2626)",
+   "tool": "read_file"
+  },
+  {
+   "args": "{'path': 'django/db/models/query.py', 'start_line': 2534, 'end_line': 2620}",
+   "kind": "tool_call",
+   "tool": "read_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "django/db/models/query.py (2627 lines, showing 2534-2620)",
+   "tool": "read_file"
+  },
+  {
+   "kind": "text",
+   "text": "Now I can see the issue. At line 2599, the code tries to find the primary key in `self.init_list`, but when dealing with proxy models, the `init_list` might not contain the primary key field because it's using the proxy model's metadata instead of the concrete model's metadata.\n\nLet me create a test"
+  },
+  {
+   "args": "{'pattern': 'proxy.*model|ProxyModel', 'glob': 'tests/*/models.py'}",
+   "kind": "tool_call",
+   "tool": "search"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "tests/backends/models.py:82: reporter_proxy = models.ForeignKey(",
+   "tool": "search"
+  },
+  {
+   "kind": "text",
+   "text": "Let me look at the proxy_models test directory:"
+  },
+  {
+   "args": "{'path': 'tests/proxy_models/models.py'}",
+   "kind": "tool_call",
+   "tool": "read_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "tests/proxy_models/models.py (229 lines)",
+   "tool": "read_file"
+  },
+  {
+   "kind": "text",
+   "text": "Now let me look at the test file for proxy models to understand the test structure:"
+  },
+  {
+   "args": "{'pattern': 'select_related.*only|only.*select_related', 'glob': 'tests/proxy_models/tests.py'}",
+   "kind": "tool_call",
+   "tool": "search"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "No matches for 'select_related.*only|only.*select_related'.",
+   "tool": "search"
+  },
+  {
+   "kind": "text",
+   "text": "Let me create a simple test script to reproduce the issue:"
+  },
+  {
+   "args": "{'path': 'test_proxy_issue.py', 'content': '#!/usr/bin/env python\\nimport os\\nimport sys\\nimport django\\n\\n# Setup Django\\nos.environ.setdefault(\\'DJANGO_SETTINGS_MODULE\\', \\'tests.settings\\')\\nsys.path.insert(0, os.path.dirname(__file__))\\n\\ndjango.setup()\\n\\nfrom tests.proxy_models.models import I",
+   "kind": "tool_call",
+   "tool": "write_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "Created test_proxy_issue.py (31 lines)",
+   "tool": "write_file"
+  },
+  {
+   "args": "{'command': 'cd /repo && python test_proxy_issue.py'}",
+   "kind": "tool_call",
+   "tool": "run_command"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ cd /repo && python test_proxy_issue.py",
+   "tool": "run_command"
+  },
+  {
+   "args": "{'command': 'pwd'}",
+   "kind": "tool_call",
+   "tool": "run_command"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ pwd",
+   "tool": "run_command"
+  },
+  {
+   "args": "{'command': 'python test_proxy_issue.py'}",
+   "kind": "tool_call",
+   "tool": "run_command"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ python test_proxy_issue.py",
+   "tool": "run_command"
+  },
+  {
+   "kind": "text",
+   "text": "Let me check what settings file exists:"
+  },
+  {
+   "args": "{'command': 'find . -name \"settings.py\" -type f | head -10'}",
+   "kind": "tool_call",
+   "tool": "run_command"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ find . -name \"settings.py\" -type f | head -10",
+   "tool": "run_command"
+  },
+  {
+   "kind": "text",
+   "text": "Let me check how the tests are run:"
+  },
+  {
+   "args": "{'command': 'python -m pytest tests/proxy_models/tests.py -v --co | head -30'}",
+   "kind": "tool_call",
+   "tool": "run_command"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ python -m pytest tests/proxy_models/tests.py -v --co | head -30",
+   "tool": "run_command"
+  },
+  {
+   "args": "{'command': 'python runtests.py proxy_models -v'}",
+   "kind": "tool_call",
+   "tool": "run_command"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ python runtests.py proxy_models -v",
+   "tool": "run_command"
+  },
+  {
+   "args": "{'command': 'ls -la | grep -E \"runtests|manage\"'}",
+   "kind": "tool_call",
+   "tool": "run_command"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ ls -la | grep -E \"runtests|manage\"",
+   "tool": "run_command"
+  },
+  {
+   "args": "{'command': 'ls -la tests/ | head -20'}",
+   "kind": "tool_call",
+   "tool": "run_command"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ ls -la tests/ | head -20",
+   "tool": "run_command"
+  },
+  {
+   "args": "{'command': 'ls -la tests/ | grep -E \"conftest|pytest\"'}",
+   "kind": "tool_call",
+   "tool": "run_command"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ ls -la tests/ | grep -E \"conftest|pytest\"",
+   "tool": "run_command"
+  },
+  {
+   "args": "{'command': 'ls -la | grep -E \"conftest|pytest\"'}",
+   "kind": "tool_call",
+   "tool": "run_command"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ ls -la | grep -E \"conftest|pytest\"",
+   "tool": "run_command"
+  },
+  {
+   "args": "{'command': 'python -m django test tests.proxy_models -v 2'}",
+   "kind": "tool_call",
+   "tool": "run_tests"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ python -m django test tests.proxy_models -v 2",
+   "tool": "run_tests"
+  },
+  {
+   "kind": "text",
+   "text": "Let me check if there's a conftest.py:"
+  },
+  {
+   "args": "{'command': 'find . -name \"conftest.py\" -type f'}",
+   "kind": "tool_call",
+   "tool": "run_command"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ find . -name \"conftest.py\" -type f",
+   "tool": "run_command"
+  },
+  {
+   "kind": "text",
+   "text": "Let me check the README in tests:"
+  },
+  {
+   "args": "{'path': 'tests/README.rst'}",
+   "kind": "tool_call",
+   "tool": "read_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "tests/README.rst (11 lines)",
+   "tool": "read_file"
+  },
+  {
+   "args": "{'command': 'ls -la tests/runtests.py'}",
+   "kind": "tool_call",
+   "tool": "run_command"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ ls -la tests/runtests.py",
+   "tool": "run_command"
+  },
+  {
+   "args": "{'command': 'cd tests && python runtests.py proxy_models -v 2 2>&1 | head -50'}",
+   "kind": "tool_call",
+   "tool": "run_command"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ cd tests && python runtests.py proxy_models -v 2 2>&1 | head -50",
+   "tool": "run_command"
+  },
+  {
+   "kind": "text",
+   "text": "Good! Now let me create a test case to reproduce the issue. Let me first look at the existing tests:"
+  },
+  {
+   "args": "{'path': 'tests/proxy_models/tests.py', 'start_line': 1, 'end_line': 100}",
+   "kind": "tool_call",
+   "tool": "read_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "tests/proxy_models/tests.py (457 lines, showing 1-100)",
+   "tool": "read_file"
+  },
+  {
+   "kind": "text",
+   "text": "Now let me create a simple test to reproduce the issue:"
+  },
+  {
+   "args": "{'path': 'test_proxy_select_related_only.py', 'content': '#!/usr/bin/env python\\nimport os\\nimport sys\\nimport django\\n\\n# Setup Django\\nos.environ.setdefault(\\'DJANGO_SETTINGS_MODULE\\', \\'tests.settings\\')\\nsys.path.insert(0, os.path.dirname(__file__))\\n\\n# Configure Django settings\\nfrom django.co",
+   "kind": "tool_call",
+   "tool": "write_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "Created test_proxy_select_related_only.py (54 lines)",
+   "tool": "write_file"
+  },
+  {
+   "args": "{'command': 'cd tests && python ../test_proxy_select_related_only.py'}",
+   "kind": "tool_call",
+   "tool": "run_command"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ cd tests && python ../test_proxy_select_related_only.py",
+   "tool": "run_command"
+  },
+  {
+   "kind": "text",
+   "text": "Let me use the test runner instead:"
+  },
+  {
+   "args": "{'path': 'tests/proxy_models/test_select_related_only.py', 'content': 'from django.test import TestCase\\nfrom .models import Issue, ProxyTrackerUser, BaseUser, TrackerUser\\n\\n\\nclass ProxySelectRelatedOnlyTests(TestCase):\\n    def test_select_related_only_with_proxy_model(self):\\n        \"\"\"\\n      ",
+   "kind": "tool_call",
+   "tool": "write_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "Created tests/proxy_models/test_select_related_only.py (28 lines)",
+   "tool": "write_file"
+  },
+  {
+   "args": "{'command': 'cd tests && python runtests.py proxy_models.test_select_related_only -v 2'}",
+   "kind": "tool_call",
+   "tool": "run_command"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ cd tests && python runtests.py proxy_models.test_select_related_only -v 2",
+   "tool": "run_command"
+  },
+  {
+   "kind": "text",
+   "text": "Interesting! The test passes. Let me check if the issue is more specific. Let me look at the issue description again - it mentions using `only()` on the proxy model itself, not on the related model. Let me create a more specific test:"
+  },
+  {
+   "args": "{'path': 'tests/proxy_models/test_select_related_only.py', 'content': 'from django.test import TestCase\\nfrom .models import Issue, ProxyTrackerUser, BaseUser, TrackerUser\\n\\n\\nclass ProxySelectRelatedOnlyTests(TestCase):\\n    def test_select_related_only_with_proxy_model(self):\\n        \"\"\"\\n      ",
+   "kind": "tool_call",
+   "tool": "write_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "Updated tests/proxy_models/test_select_related_only.py (47 lines)",
+   "tool": "write_file"
+  },
+  {
+   "args": "{'command': 'cd tests && python runtests.py proxy_models.test_select_related_only -v 2'}",
+   "kind": "tool_call",
+   "tool": "run_command"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ cd tests && python runtests.py proxy_models.test_select_related_only -v 2",
+   "tool": "run_command"
+  },
+  {
+   "kind": "text",
+   "text": "Good! I found an error, but it's a different one. Let me adjust the test to match the original issue more closely:"
+  },
+  {
+   "args": "{'path': 'tests/proxy_models/test_select_related_only.py', 'content': 'from django.test import TestCase\\nfrom .models import (\\n    Issue,\\n    ProxyTrackerUser,\\n    BaseUser,\\n    TrackerUser,\\n    Improvement,\\n    ProxyProxyBug,\\n)\\n\\n\\nclass ProxySelectRelatedOnlyTests(TestCase):\\n    def test_",
+   "kind": "tool_call",
+   "tool": "write_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "Updated tests/proxy_models/test_select_related_only.py (71 lines)",
+   "tool": "write_file"
+  },
+  {
+   "args": "{'command': 'cd tests && python runtests.py proxy_models.test_select_related_only -v 2'}",
+   "kind": "tool_call",
+   "tool": "run_command"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ cd tests && python runtests.py proxy_models.test_select_related_only -v 2",
+   "tool": "run_command"
+  },
+  {
+   "kind": "text",
+   "text": "The tests pass. Let me look more carefully at the issue. The issue mentions that the problem occurs when using `AnotherModel.objects.select_related(\"custom\").only(\"custom__name\")` where `custom` is a ForeignKey to a proxy model. Let me create a more accurate test case:"
+  },
+  {
+   "args": "{'path': 'tests/proxy_models/test_select_related_only.py', 'content': 'from django.test import TestCase\\nfrom .models import (\\n    Issue,\\n    ProxyTrackerUser,\\n    BaseUser,\\n    TrackerUser,\\n    Improvement,\\n    ProxyProxyBug,\\n    Bug,\\n)\\n\\n\\nclass ProxySelectRelatedOnlyTests(TestCase):\\n   ",
+   "kind": "tool_call",
+   "tool": "write_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "Updated tests/proxy_models/test_select_related_only.py (99 lines)",
+   "tool": "write_file"
+  },
+  {
+   "args": "{'command': 'cd tests && python runtests.py proxy_models.test_select_related_only -v 2'}",
+   "kind": "tool_call",
+   "tool": "run_command"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ cd tests && python runtests.py proxy_models.test_select_related_only -v 2",
+   "tool": "run_command"
+  },
+  {
+   "kind": "text",
+   "text": "The tests still pass. Let me look at the issue more carefully. The issue mentions that the problem is in `django/db/models/sql/query.py` at line 745. Let me check what version of Django this is:"
+  },
+  {
+   "args": "{'command': 'grep -r \"VERSION = \" django/__init__.py'}",
+   "kind": "tool_call",
+   "tool": "run_command"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ grep -r \"VERSION = \" django/__init__.py",
+   "tool": "run_command"
+  },
+  {
+   "kind": "text",
+   "text": "This is Django 4.2. The issue mentions Django 4.0.5. Let me look at the exact line mentioned in the issue - line 745 in query.py. Let me search for the code pattern mentioned in the issue:"
+  },
+  {
+   "args": "{'pattern': 'opts = cur_model._meta', 'glob': 'django/db/models/sql/query.py'}",
+   "kind": "tool_call",
+   "tool": "search"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "django/db/models/sql/query.py:751: opts = cur_model._meta",
+   "tool": "search"
+  },
+  {
+   "kind": "text",
+   "text": "Good! So the line is at 751 now (was 745 in the issue). Let me look at the context again:"
+  },
+  {
+   "args": "{'path': 'django/db/models/sql/query.py', 'start_line': 738, 'end_line': 765}",
+   "kind": "tool_call",
+   "tool": "read_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "django/db/models/sql/query.py (2694 lines, showing 738-765)",
+   "tool": "read_file"
+  },
+  {
+   "kind": "text",
+   "text": "Now I see the issue! At line 751, when `cur_model` is a proxy model, `opts = cur_model._meta` will get the proxy model's metadata. But later, at line 757, when we try to add the primary key to `must_include`, we're using the proxy model's pk, which might not be in the `init_list` when the related po"
+  },
+  {
+   "args": "{'path': 'django/db/models/sql/query.py', 'start_line': 767, 'end_line': 810}",
+   "kind": "tool_call",
+   "tool": "read_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "django/db/models/sql/query.py (2694 lines, showing 767-810)",
+   "tool": "read_file"
+  },
+  {
+   "kind": "text",
+   "text": "Now I understand the issue better. The `must_include` dictionary uses the model as a key, and when we have a proxy model, we're using the proxy model as the key. But later, when the `RelatedPopulator` is created, it expects the concrete model's fields to be in the `init_list`.\n\nLet me look at the `R"
+  },
+  {
+   "args": "{'path': 'django/db/models/query.py', 'start_line': 2584, 'end_line': 2603}",
+   "kind": "tool_call",
+   "tool": "read_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "django/db/models/query.py (2627 lines, showing 2584-2603)",
+   "tool": "read_file"
+  },
+  {
+   "kind": "text",
+   "text": "I see! At line 2599, the code tries to find the primary key in `self.init_list`. The issue is that when `klass_info[\"model\"]` is a proxy model, `self.model_cls._meta.pk.attname` might not be in `self.init_list` because the `init_list` was built based on the concrete model's fields.\n\nLet me trace bac"
+  },
+  {
+   "args": "{'pattern': 'klass_info\\\\[.*model.*\\\\]', 'glob': 'django/db/models/sql/compiler.py'}",
+   "kind": "tool_call",
+   "tool": "search"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "django/db/models/sql/compiler.py:1207: concrete_model = klass_info[\"model\"]._meta.concrete_model",
+   "tool": "search"
+  },
+  {
+   "kind": "text",
+   "text": "Let me look at the compiler code:"
+  },
+  {
+   "args": "{'path': 'django/db/models/sql/compiler.py', 'start_line': 1200, 'end_line': 1250}",
+   "kind": "tool_call",
+   "tool": "read_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "django/db/models/sql/compiler.py (1932 lines, showing 1200-1250)",
+   "tool": "read_file"
+  },
+  {
+   "kind": "text",
+   "text": "Let me search for where `klass_info` is created with the \"model\" key:"
+  },
+  {
+   "args": "{'pattern': '\"model\":\\\\s*', 'glob': 'django/db/models/sql/compiler.py'}",
+   "kind": "tool_call",
+   "tool": "search"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "django/db/models/sql/compiler.py:266: \"model\": self.query.model,",
+   "tool": "search"
+  },
+  {
+   "kind": "text",
+   "text": "Let me look at line 1063:"
+  },
+  {
+   "args": "{'path': 'django/db/models/sql/compiler.py', 'start_line': 1050, 'end_line': 1120}",
+   "kind": "tool_call",
+   "tool": "read_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "django/db/models/sql/compiler.py (1932 lines, showing 1050-1120)",
+   "tool": "read_file"
+  },
+  {
+   "kind": "text",
+   "text": "Now I see the issue! At line 1063, the `klass_info[\"model\"]` is set to `f.remote_field.model`, which could be a proxy model. And at line 1114, it's set to `model`, which could also be a proxy model.\n\nThe issue is that when we have a proxy model, the `init_list` in `RelatedPopulator` is built based o"
+  },
+  {
+   "args": "{'pattern': 'proxy.*only|only.*proxy', 'glob': 'tests/test_*.py'}",
+   "kind": "tool_call",
+   "tool": "search"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "No matches for 'proxy.*only|only.*proxy'.",
+   "tool": "search"
+  },
+  {
+   "kind": "text",
+   "text": "Let me search for tests related to `deferred_to_data`:"
+  },
+  {
+   "args": "{'pattern': 'deferred_to_data'}",
+   "kind": "tool_call",
+   "tool": "search"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "django/db/models/sql/compiler.py:1313: self.query.deferred_to_data(columns)",
+   "tool": "search"
+  },
+  {
+   "kind": "text",
+   "text": "Let me look at how `deferred_to_data` is called:"
+  },
+  {
+   "args": "{'path': 'django/db/models/sql/compiler.py', 'start_line': 1305, 'end_line': 1320}",
+   "kind": "tool_call",
+   "tool": "read_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "django/db/models/sql/compiler.py (1932 lines, showing 1305-1320)",
+   "tool": "read_file"
+  },
+  {
+   "kind": "text",
+   "text": "Now let me understand the issue better. Let me look at the `deferred_to_data` method again and understand what it does:"
+  },
+  {
+   "args": "{'path': 'django/db/models/sql/query.py', 'start_line': 721, 'end_line': 803}",
+   "kind": "tool_call",
+   "tool": "read_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "django/db/models/sql/query.py (2694 lines, showing 721-803)",
+   "tool": "read_file"
+  },
+  {
+   "kind": "text",
+   "text": "Now I understand the issue better. The problem is at line 751:\n```python\nopts = cur_model._meta\n```\n\nWhen `cur_model` is a proxy model, `opts` will be the proxy model's metadata. But then at line 757, we add `opts.pk` to `must_include[cur_model]`. The issue is that `cur_model` is the proxy model, bu"
+  },
+  {
+   "args": "{'path': 'django/db/models/sql/query.py', 'start_line': 738, 'end_line': 765}",
+   "kind": "tool_call",
+   "tool": "read_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "django/db/models/sql/query.py (2694 lines, showing 738-765)",
+   "tool": "read_file"
+  },
+  {
+   "kind": "text",
+   "text": "Now I'll make the change. I'll add a line after line 750 to convert `cur_model` to the concrete model:"
+  },
+  {
+   "args": "{'path': 'django/db/models/sql/query.py', 'old': '                if is_reverse_o2o(source):\\n                    cur_model = source.related_model\\n                else:\\n                    cur_model = source.remote_field.model\\n                opts = cur_model._meta', 'new': '                if is",
+   "kind": "tool_call",
+   "tool": "edit_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "Edited django/db/models/sql/query.py (1 occurrence)",
+   "tool": "edit_file"
+  },
+  {
+   "kind": "text",
+   "text": "Now let me verify the change:"
+  },
+  {
+   "args": "{'path': 'django/db/models/sql/query.py', 'start_line': 738, 'end_line': 765}",
+   "kind": "tool_call",
+   "tool": "read_file"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "django/db/models/sql/query.py (2695 lines, showing 738-765)",
+   "tool": "read_file"
+  },
+  {
+   "kind": "text",
+   "text": "Good! The change has been made. Now let me run the tests to see if this fixes the issue:"
+  },
+  {
+   "args": "{}",
+   "kind": "tool_call",
+   "tool": "run_tests"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ pytest -q",
+   "tool": "run_tests"
+  },
+  {
+   "kind": "text",
+   "text": "Let me try running the tests with Django's test runner:"
+  },
+  {
+   "args": "{'command': 'cd /repo && python -m django test --help 2>&1 | head -20'}",
+   "kind": "tool_call",
+   "tool": "run_command"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ cd /repo && python -m django test --help 2>&1 | head -20",
+   "tool": "run_command"
+  },
+  {
+   "kind": "text",
+   "text": "Let me check the repository structure:"
+  },
+  {
+   "args": "{}",
+   "kind": "tool_call",
+   "tool": "list_files"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "6645 files:",
+   "tool": "list_files"
+  },
+  {
+   "kind": "text",
+   "text": "Let me try running the tests using the Django test runner:"
+  },
+  {
+   "args": "{'command': 'python -m django test --help 2>&1 | head -20'}",
+   "kind": "tool_call",
+   "tool": "run_command"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "$ python -m django test --help 2>&1 | head -20",
+   "tool": "run_command"
+  },
+  {
+   "kind": "text",
+   "text": "Let me try running the tests with a specific test file. First, let me search for tests related to proxy models and `only()`:"
+  },
+  {
+   "args": "{'pattern': 'proxy', 'glob': 'tests/queries/test_*.py'}",
+   "kind": "tool_call",
+   "tool": "search"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "tests/queries/test_contains.py:10: cls.proxy_category = ProxyCategory.objects.create()",
+   "tool": "search"
+  },
+  {
+   "kind": "text",
+   "text": "Let me search for tests related to `only()`:"
+  },
+  {
+   "args": "{'pattern': '\\\\.only\\\\(', 'glob': 'tests/queries/test_*.py'}",
+   "kind": "tool_call",
+   "tool": "search"
+  },
+  {
+   "error": false,
+   "kind": "tool_result",
+   "text": "No matches for '\\\\.only\\\\('.",
+   "tool": "search"
+  },
+  {
+   "kind": "budget",
+   "text": "Turn ceiling reached: 60 of 60."
+  },
+  {
+   "kind": "error",
+   "text": "(the agent stopped without a summary)"
+  }
+ ],
+ "wall_seconds": 257.4
+}

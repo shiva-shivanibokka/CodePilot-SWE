@@ -1,0 +1,69 @@
+{
+ "arm": "agentless",
+ "cache_read_tokens": 0,
+ "cache_write_tokens": 9827,
+ "changed_lines": 0,
+ "contamination": [],
+ "cost_usd": 0.019175,
+ "diff": "",
+ "error": "",
+ "grade": {
+  "applied": false,
+  "command": "",
+  "detail": "no source changes to grade",
+  "exit_code": null,
+  "f2p_passed": 0,
+  "f2p_total": 0,
+  "p2p_passed": 0,
+  "p2p_total": 0,
+  "resolved": false
+ },
+ "infra_error": false,
+ "input_tokens": 6,
+ "instance_id": "django__django-15851",
+ "model": "claude-haiku-4-5-20251001",
+ "model_calls": 2,
+ "notes": [
+  "sample 1 rejected: no JSON object in the response"
+ ],
+ "output_tokens": 1377,
+ "repo": "django/django",
+ "resolved": false,
+ "selection_basis": "no candidates",
+ "stopped_by": [
+  "0 of 1 samples usable"
+ ],
+ "submitted": false,
+ "timestamp": "2026-10-05T15:32:55.947516+00:00",
+ "transcript": [
+  {
+   "files": [
+    "django/db/backends/postgresql/base.py",
+    "django/db/backends/postgresql/client.py"
+   ],
+   "kind": "localize",
+   "locations": [
+    {
+     "class_name": "DatabaseWrapper",
+     "file": "django/db/backends/postgresql/base.py",
+     "function_name": "get_connection_params",
+     "reason": "Likely constructs the psql command parameters"
+    },
+    {
+     "class_name": "DatabaseClient",
+     "file": "django/db/backends/postgresql/client.py",
+     "function_name": "runshell",
+     "reason": "Constructs and executes the psql shell command with proper argument ordering"
+    }
+   ]
+  },
+  {
+   "index": 0,
+   "kind": "sample",
+   "path": "django/db/backends/postgresql/base.py",
+   "text": "no JSON object in the response",
+   "usable": false
+  }
+ ],
+ "wall_seconds": 19.2
+}

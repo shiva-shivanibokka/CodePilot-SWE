@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CodePilot-SWE — recorded run</title>
+<meta name="description" content="Step through a recorded SWE-bench run: an agentic loop and an agentless pipeline on the same ten real GitHub issues.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>&#9654;</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <h1>CodePilot-SWE <span class="sub">recorded run</span></h1>
+  <p class="lede">
+    Two ways of fixing a real GitHub issue, run on the same ten
+    <a href="https://www.swebench.com/" target="_blank" rel="noopener">SWE-bench Lite</a>
+    instances from Django and SymPy. An <strong>agentic loop</strong> that explores the
+    repository with tools, and an <strong>agentless pipeline</strong> that localises then
+    patches in a fixed number of steps. Every step below is replayed from a run that
+    already happened — this page makes no model call.
+  </p>
+</header>
+
+<section class="caveat" aria-labelledby="caveat-h">
+  <h2 id="caveat-h">What this does and does not show</h2>
+  <p>
+    The agent resolved <strong>5 of 10</strong>; the agentless baseline <strong>1 of 10</strong>.
+    All four instances the two disagreed on favoured the agent, and there was none the
+    baseline resolved and the agent did not.
+  </p>
+  <p>
+    <strong>This is not a statistically significant result.</strong> Exact McNemar on the
+    four discordant pairs gives two-sided <em>p</em> = 0.125. Ten instances cannot clear
+    the conventional 0.05 bar even with a perfect 4–0 split, because 2&nbsp;×&nbsp;0.5<sup>4</sup>
+    = 0.125 is the smallest <em>p</em> this design can produce. The defensible claim is
+    directional: a consistent direction on a sample too small for a significance claim.
+  </p>
+  <p class="aside">
+    The sharper finding is cost. The agent cost <strong>8.6×</strong> the baseline for 5×
+    the resolutions — <strong>$0.45 per resolution against $0.26</strong>. Better outcomes,
+    worse efficiency. Of the five it missed, two hit the step ceiling and three stopped by
+    their own choice with a wrong fix: roughly half capacity, half reasoning.
+  </p>
+</section>
+
+<section id="totals" aria-label="Totals by arm"></section>
+
+<section aria-labelledby="inst-h">
+  <h2 id="inst-h">The ten instances</h2>
+  <p class="hint">Pick one to replay both arms side by side.</p>
+  <div id="instances" class="instances"></div>
+</section>
+
+<section id="detail" class="detail" hidden aria-live="polite"></section>
+
+<footer>
+  <p>
+    Model <code id="f-model">—</code>, pinned · seed <code id="f-seed">—</code> ·
+    grading runs the repository's own tests in a container, and a patch that does not
+    apply is scored as unresolved.
+    <a href="https://github.com/shiva-shivanibokka/CodePilot-SWE" target="_blank" rel="noopener">Source and full study</a>.
+  </p>
+  <p class="aside">
+    Served from <code>bench/results/haiku-study/</code> by <code>replay/build_data.py</code>.
+    Nothing on this page is hand-written data.
+  </p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
