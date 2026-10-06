@@ -32,20 +32,7 @@ const runCache = new Map();
 let index = null;
 let openInstance = null;
 
-initSwitcher();
 init();
-
-function initSwitcher() {
-  const buttons = document.querySelectorAll("[data-set-style]");
-  const sync = () => buttons.forEach((b) =>
-    b.setAttribute("aria-pressed", String(b.dataset.setStyle === document.documentElement.dataset.style)));
-  buttons.forEach((b) => b.addEventListener("click", () => {
-    document.documentElement.dataset.style = b.dataset.setStyle;
-    try { localStorage.setItem("replay-style", b.dataset.setStyle); } catch { /* private window */ }
-    sync();
-  }));
-  sync();
-}
 
 async function init() {
   try {
@@ -150,7 +137,7 @@ function renderInstances() {
     const badges = el("div", "badges");
     for (const arm of index.arms) badges.append(badge(arm, inst.arms[arm]));
     row.append(badges);
-    row.append(el("div", "meta", "replay →"));
+    row.append(el("div", "go", "replay →"));
 
     row.addEventListener("click", () => openDetail(inst, row));
     wrap.append(row);
