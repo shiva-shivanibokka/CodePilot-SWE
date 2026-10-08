@@ -82,10 +82,10 @@ def main() -> int:
     agentless = [pairs[i]["agentless"] for i in ids]
     n = len(ids)
 
-    both = sum(1 for a, b in zip(agent, agentless) if a and b)
-    agent_only = sum(1 for a, b in zip(agent, agentless) if a and not b)
-    less_only = sum(1 for a, b in zip(agent, agentless) if b and not a)
-    neither = sum(1 for a, b in zip(agent, agentless) if not a and not b)
+    both = sum(1 for a, b in zip(agent, agentless, strict=True) if a and b)
+    agent_only = sum(1 for a, b in zip(agent, agentless, strict=True) if a and not b)
+    less_only = sum(1 for a, b in zip(agent, agentless, strict=True) if b and not a)
+    neither = sum(1 for a, b in zip(agent, agentless, strict=True) if not a and not b)
 
     ra, rl = sum(agent) / n, sum(agentless) / n
     diff = ra - rl
