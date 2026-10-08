@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import urllib.request
 
 import pytest
@@ -92,19 +93,113 @@ def test_the_spend_ledger_does_not_move_with_the_output_file():
     assert a == b and a.parent == codepilot.llm.LEDGER_DIR, "the user-level ledger (D41)"
 
 
+# A home directory as it appears on any of the three platforms, including the
+# JSON-escaped `C:\\Users\\` form that a recording stores. The account name is
+# captured so a failure can name it.
+_HOME_SHAPED = re.compile(
+    r"(?:/home/|/Users/|[A-Za-z]:[\\/]{1,2}Users[\\/]{1,2})([^/\\\"\s,;:)\]}]{1,64})"
+)
+
+# Verbatim dataset input, not something the harness wrote. `task.text` is the
+# SWE-bench problem statement -- the issue body as it was filed -- and some of
+# those bodies paste a traceback from the reporter's own machine. Redacting it
+# would edit the task the model was given, so the guard reads it as given and
+# checks only what this repository produces.
+_VERBATIM_FIELDS = frozenset({"text"})
+
+
+def _harness_written_text(path):
+    """Every string in `path` that this repository authored, as one blob.
+
+    A result file is JSON or JSON Lines; anything that does not parse is
+    returned whole, because an unparseable file is exactly where a stray path
+    would hide.
+    """
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    docs = []
+    try:
+        docs.append(json.loads(raw))
+    except ValueError:
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                docs.append(json.loads(line))
+            except ValueError:
+                return raw  # not JSON at all; search all of it
+
+    out = []
+
+    def walk(node, key=None):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                walk(v, k)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v, key)
+        elif isinstance(node, str) and key not in _VERBATIM_FIELDS:
+            out.append(node)
+
+    for d in docs:
+        walk(d)
+    return "\n".join(out)
+
+
 def test_committed_results_carry_no_personal_paths():
-    """E: recordings and result rows embedded home-directory paths."""
+    """E: recordings and result rows embedded home-directory paths.
+
+    The needle used to be `Path.home().name`, the account running the test. That
+    guarded one machine and nothing else: on a Linux CI runner the name is
+    `runner`, which occurs in recorded patches and prose as an ordinary word
+    (`runner.invoke(...)`, `get_runner(settings)`, "Django's test runner"), so
+    the sweep matched benchmark content and the job went red with no leak
+    present -- red since 2026-10-05, which also hid every real failure behind
+    it. On the Windows runner the same test passed only because that account is
+    called `runneradmin` and the string happens to be absent.
+
+    So the check no longer depends on who is running it. It looks for a
+    home-directory *shape* instead of one name, which catches any contributor's
+    account rather than only the current machine's.
+    """
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1] / "bench" / "results"
-    # The needle is this machine's account name, not a literal. A hardcoded name
-    # only guards one machine, and writing it here published the very string the
-    # test exists to keep out of the repository.
-    name = Path.home().name
-    assert name, "cannot determine the account name to search for"
-    leaks = [p for p in root.rglob("*")
-             if p.is_file() and name in p.read_text(encoding="utf-8", errors="replace")]
-    assert leaks == [], f"account name found in: {[p.name for p in leaks]}"
+    leaks = {}
+    for p in sorted(root.rglob("*")):
+        if not p.is_file():
+            continue
+        found = {m.group(0) for m in _HOME_SHAPED.finditer(_harness_written_text(p))}
+        if found:
+            leaks[p.relative_to(root).as_posix()] = sorted(found)
+    assert not leaks, f"home-directory paths in committed results: {leaks}"
+
+
+@pytest.mark.parametrize(
+    "doc, expected",
+    [
+        ({"log_tail": "error at /home/someone/.cache/x"}, ["/home/someone"]),
+        ({"log": "/Users/jane/Desktop"}, ["/Users/jane"]),
+        ({"log": "C:\\\\Users\\\\bob\\\\AppData"}, ["C:\\\\Users\\\\bob"]),
+        # Verbatim dataset input is read as filed, not edited.
+        ({"task": {"text": "traceback /home/avinash/lib/y"}}, []),
+        # The old needle was the running account's name, so on a Linux runner
+        # these ordinary occurrences of "runner" failed the guard.
+        ({"note": "runner.invoke(cli) and get_runner(x)"}, []),
+    ],
+)
+def test_the_personal_path_guard_reads_only_what_the_harness_wrote(tmp_path, doc, expected):
+    p = tmp_path / "x.json"
+    p.write_text(json.dumps(doc), encoding="utf-8")
+    found = sorted(m.group(0) for m in _HOME_SHAPED.finditer(_harness_written_text(p)))
+    assert found == expected
+
+
+def test_the_personal_path_guard_searches_a_file_it_cannot_parse(tmp_path):
+    """An unparseable file is exactly where a stray path would hide."""
+    p = tmp_path / "run.log"
+    p.write_text("plain log /home/zoe/t", encoding="utf-8")
+    assert "/home/zoe" in _harness_written_text(p)
 
 
 def test_new_result_rows_have_the_home_directory_redacted():
