@@ -137,17 +137,39 @@ def untracked(root: Path | str, ignored: bool) -> set[str]:
     return {p for p in out.split("\0") if p}
 
 
+# Caches an interpreter or a test runner writes by itself. Excluded from a
+# captured diff because they are a side effect of running the repository's
+# tests, not something the agent edited. Leaving them in is not cosmetic: the
+# diff is the patch grading applies and the patch the results file publishes,
+# `drop_reason` has no rule that would drop a `.pyc`, and a compiled module in
+# an applied patch can shadow the source it was compiled from. Repositories
+# that ignore these never showed the problem; one that does not ignore them —
+# the local fixture, and any repository added later — hands grading a base85
+# binary blob.
+_GENERATED_CACHES = (
+    ":(exclude,glob)**/__pycache__/**",
+    ":(exclude,glob)**/*.py[co]",
+    ":(exclude,glob)**/.pytest_cache/**",
+    ":(exclude,glob)**/.mypy_cache/**",
+    ":(exclude,glob)**/.ruff_cache/**",
+)
+
+
 def diff_since(root: Path | str, baseline: str) -> str:
     """Unified diff of everything changed since `baseline`, new files included.
 
     Built in a throwaway index so the checkout's own index is never touched.
     `git diff HEAD` alone silently omits untracked files, so a patch that adds
     a module would come back without it.
+
+    Generated caches are excluded; see `_GENERATED_CACHES`. A cache path that
+    was *tracked* at `baseline` keeps its baseline content in the index, so it
+    simply does not appear in the diff rather than appearing as a deletion.
     """
     with tempfile.TemporaryDirectory() as tmp:
         env = {"GIT_INDEX_FILE": str(Path(tmp) / "index")}
         git(root, "read-tree", baseline, env=env)
-        git(root, "add", "-A", env=env)
+        git(root, "add", "-A", "--", ".", *_GENERATED_CACHES, env=env)
         return git(root, "diff", "--cached", "--binary", baseline, env=env).stdout
 
 

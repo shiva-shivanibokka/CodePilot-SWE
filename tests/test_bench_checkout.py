@@ -86,6 +86,40 @@ def test_the_diff_includes_new_files_and_leaves_the_index_alone(tmp_path, task):
     assert staged.strip() == "", "computing the diff staged the agent's work"
 
 
+def test_the_diff_excludes_bytecode_the_test_run_left_behind(tmp_path, task):
+    """Running the repository's tests writes `__pycache__`; that is not an edit.
+
+    The agent's diff is applied by grading and published as its patch, so a
+    `.pyc` captured here is not cosmetic: `drop_reason` does not drop it, which
+    means a compiled module reaches the graded patch, and a base85 binary blob
+    reaches the results file. Nothing in the repository ignores `__pycache__`
+    unless the repository itself happens to, and the local fixture does not.
+
+    The caches are written here directly rather than by running pytest, so the
+    test does not depend on `PYTHONDONTWRITEBYTECODE` being unset in whatever
+    shell it runs in -- with it set, a run of the real tests leaves no bytecode
+    and this would pass without proving anything.
+    """
+    instance, _ = task
+    dest = tmp_path / "checkout"
+    checkout.clone_at(instance["repo_url"], instance["base_commit"], dest)
+    baseline = checkout.commit_baseline(dest)
+
+    (dest / "calc.py").write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
+    for cache in (dest / "__pycache__", dest / "tests" / "__pycache__"):
+        cache.mkdir(parents=True, exist_ok=True)
+        (cache / "calc.cpython-312.pyc").write_bytes(b"\x03\xf3\r\n\x00binary")
+    (dest / ".pytest_cache" / "v" / "cache").mkdir(parents=True)
+    (dest / ".pytest_cache" / "v" / "cache" / "lastfailed").write_text("{}", encoding="utf-8")
+
+    diff = checkout.diff_since(dest, baseline)
+    assert "calc.py" in diff, "the real edit must still be captured"
+    assert "__pycache__" not in diff
+    assert ".pyc" not in diff
+    assert ".pytest_cache" not in diff
+    assert "GIT binary patch" not in diff
+
+
 def test_restore_returns_the_exact_baseline(tmp_path, task):
     instance, _ = task
     dest = tmp_path / "checkout"
