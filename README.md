@@ -13,12 +13,63 @@ tools — beats a fixed, tool-free pipeline on real GitHub issues.
   grader, and the same prompt base and caching for both.
 
 **What has been measured, and what has not.** The agent's design choices were
-measured on CodePilot's own 20-task suite (below). The SWE-bench comparison
-this repository is built for **has not been run**: the harness is tested
-offline end to end and was smoke-tested on four real instances with a local
-7B model (0/8 resolved, as expected), the plan and its cost are in
-[`bench/STUDY_PLAN.md`](bench/STUDY_PLAN.md), and nothing here should be read
-as a SWE-bench score.
+measured on CodePilot's own 20-task suite (below). The SWE-bench comparison has
+now been run **as a funded pilot**, not as the full design: 10 SWE-bench Lite
+instances, one attempt each, on `claude-haiku-4-5-20251001`, for **$2.4892 over
+588 calls**. Results and every caveat are in
+[`bench/results/haiku-study/RESULTS.md`](bench/results/haiku-study/RESULTS.md).
+
+| | agent | agentless |
+|---|---|---|
+| resolved | **5 / 10** | **1 / 10** |
+| model calls | 542 | 18 |
+| cost | $2.254 | $0.263 |
+| cost per resolution | $0.45 | $0.26 |
+
+All **4 discordant pairs favour the agent and 0 favour the baseline** — there
+was no instance the baseline resolved and the agent did not.
+
+**This is not a significant result and must not be written up as one.** Exact
+McNemar on those 4 discordant pairs gives two-sided **p = 0.125**, and that is
+the *floor* this design can produce: with 4 discordant pairs the smallest
+attainable p is 2 × 0.5⁴ = 0.125, so ten instances cannot clear 0.05 even on a
+perfect 4–0 split. The defensible claim is directional: a consistent direction
+on a sample too small for a significance claim.
+
+The bootstrap interval `bench/STUDY_PLAN.md` asked for is now computed
+(`python -m bench.analyze_study`, 10,000 resamples over instances, seed 0):
+the paired difference is **+0.400, 95% percentile CI [+0.100, +0.700]**,
+identical on every seed tried. That interval excludes zero while the exact test
+does not reject, and **the exact test governs** — a percentile bootstrap on 10
+lattice-valued pairs is anti-conservative and cannot manufacture the
+significance McNemar denies. It is reported because the plan specified it, and
+because a wide interval is the honest summary of n = 10.
+
+**The absolute resolve rates are NOT comparable to published SWE-bench Lite
+leaderboard numbers.** Grading ran in a local virtualenv, not the official
+per-instance Docker image — every row in `main.jsonl` records
+`"backend": "local"`.
+
+There is also **no grader-agreement evidence.** `codepilot/bench/official_grader.py`
+is wired in but no run of it is recorded here, and `swebench` is not installed
+in this environment (`import swebench` → `ModuleNotFoundError`), so it could
+not have run. `codepilot/bench/swebench_compat.py` is an *import shim* — it
+installs inert placeholders for `datasets` and `modal` so swebench's pure
+functions can be imported without its heavy optional deps — and is not itself
+a second grader. So nothing here establishes that the local grader and the
+official one agree; that comparison is still owed.
+
+Further limits, all measured and listed in the study's RESULTS.md: the agent's
+60-step ceiling binds on **2 of 10** instances; two instances
+(`django-12308`, `django-13551`) are easier than intended because their `empty`
+arm partly passes; the surviving 10 instances span only **django and sympy**;
+and **10 of the 20** sampled candidates were excluded (`instances.sample(20,
+seed=0)`), each by the free gold/empty check with a measured cause, not a
+prediction.
+
+The **full** design in [`bench/STUDY_PLAN.md`](bench/STUDY_PLAN.md) — 50
+instances, 3 seeds, N = 3 budget matching, official Docker images — remains
+**not run**.
 
 ---
 
@@ -247,14 +298,25 @@ before the committed rows (MERGE_DECISIONS D23, D24).
 
 ### SWE-bench comparison
 
-Not run. Funded next: a first run of both arms on `claude-haiku-4-5-20251001`,
-20 random Lite instances, N = 1, under a $20 hard cap — expected about
-$1.54–$4.61, worst case from the caps $16.50 (`--dry-run`) — with its exact
-commands, which the test suite runs against a fake model
-(`tests/test_runbook.py`). The full design in
-[`bench/STUDY_PLAN.md`](bench/STUDY_PLAN.md) is not funded: 50 instances, 3 seeds,
-both arms budget-matched at N = 3, an issue/gold-patch mismatch analysis, and a
-priced estimate of **$4.69–$161.88** depending on the model (26.9M input and
+**The funded pilot ran** on 2026-10-05: 10 Lite instances, one attempt each,
+`claude-haiku-4-5-20251001`, `--max-calls 60 --max-cost 0.75` per attempt,
+local grading backend. Agent **5/10** vs agentless **1/10**, 4–0 on discordant
+pairs, $2.4892 over 588 calls. Exact McNemar two-sided **p = 0.125** (not
+significant, and the floor for this design); bootstrap 95% CI for the paired
+difference **[+0.100, +0.700]** around a point estimate of +0.400
+(`python -m bench.analyze_study`). Full write-up, the 10 exclusions with their
+measured causes, and the deviations from this plan:
+[`bench/results/haiku-study/RESULTS.md`](bench/results/haiku-study/RESULTS.md).
+
+Scope limits that keep this a pilot rather than a score: grading in a local
+virtualenv (so **not leaderboard-comparable**), no grader-agreement evidence,
+the step ceiling binding on 2 of 10, two instances easier than intended, and a
+corpus spanning only django and sympy.
+
+**The full design in [`bench/STUDY_PLAN.md`](bench/STUDY_PLAN.md) is still not
+run** and not funded: 50 instances, 3 seeds, both arms budget-matched at N = 3,
+official per-instance Docker images, an issue/gold-patch mismatch analysis, and
+a priced estimate of **$4.69–$161.88** depending on the model (26.9M input and
 1.1M output tokens, scaled from the smoke run's measured counts; roughly three
 times that if instances are harder and a stronger model works longer than the
 7B smoke model did).
@@ -316,7 +378,7 @@ times that if instances are harder and a stronger model works longer than the
 ## Development
 
 ```bash
-pytest -q          # 414 passed, 1 skipped (the opt-in Docker test); no key, no network
+pytest -q          # 433 passed, 1 skipped (the opt-in Docker test); no key, no network
 ruff check .
 python -m codepilot.doctor
 ```

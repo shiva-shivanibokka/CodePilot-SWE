@@ -1220,6 +1220,13 @@ the official grader was corrected: it is wired in (D37) but not run.
   paragraph summarises D25–D41.
 * "SWE-bench comparison" names the funded Haiku run and its numbers (D43).
 * Test count updated to the current suite: 387 passed, 1 skipped.
+  **Superseded 2026-10-08: `pytest -q` now reports 433 passed, 1 skipped.**
+  This line and the README had drifted apart (387 here, 414 there) and neither
+  was current. Both now carry 433, measured with exactly `pytest -q` in the
+  repository's own `.venv`. CI reported 422 on `96c694c2` on all four jobs
+  (ubuntu/windows × 3.11/3.12); the extra 11 are the tests added alongside
+  `bench/analyze_study.py` in this change. The 1 skip is the opt-in Docker
+  test.
 
 ## D45. Five holes the spend-safety gate found, and three disclosures
 
@@ -1349,9 +1356,32 @@ Verified here, commit by commit over all 96 commits on `main`:
      GitHub account is `shiva-shivanibokka`, so every generated pull-request
      footer pointed at a repository that does not exist. Fixed to the real
      handle rather than placeholdered, since the link is meant to work.
-  3. **The leak detector no longer hardcodes the name.** Its needle is
-     `Path.home().name`, so it guards any machine instead of one, and the test
-     file itself stops publishing the string it exists to exclude.
+  3. **The leak detector no longer hardcodes the name.** Its needle was
+     `Path.home().name`, so it guarded any machine instead of one, and the test
+     file itself stopped publishing the string it exists to exclude.
+
+     **Revised 2026-10-08, because that needle was itself the next bug.**
+     `Path.home().name` is the account *running* the test. On a Linux CI runner
+     that is `runner`, which occurs throughout the committed corpus as an
+     ordinary word (`runner.invoke(cli4, ["routes"])` in a recorded patch,
+     `get_runner(settings)`, the prose "Django's test runner"), so the guard
+     matched benchmark content and the two Ubuntu jobs went red with no
+     personal path present — red from 2026-10-05, which also hid every other
+     failure behind it. The Windows jobs passed only because that account is
+     called `runneradmin`. Measured against `bench/results`: "runner" matched
+     3 files, "sbokk" matched 0, "runneradmin" matched 0.
+
+     The guard now matches a home-directory *shape* on all three platforms
+     (including the JSON-escaped `C:\\Users\\` form) rather than any one name,
+     which is strictly stronger, and it reads only what this repository wrote —
+     verbatim dataset fields such as a SWE-bench `task.text` are excluded,
+     because redacting an issue body would edit the task the model was given.
+     Applying it immediately found `/home/avinash` in two recordings, in
+     exactly such a `task.text`, and that is deliberately left as filed.
+
+     **Status on HEAD: green.** `pytest tests/test_bench_instances.py -k
+     "personal_paths or guard"` reports 7 passed, and CI on `96c694c2` passed
+     all four jobs — the first green run since 2026-10-05.
   The lesson recorded rather than smoothed over: a scan is only as good as its
   pattern, and this one was trusted twice — once in this audit and once by me
   when I re-scanned the new result files and reported them clean.

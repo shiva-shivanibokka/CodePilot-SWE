@@ -1,10 +1,33 @@
 # Study plan: a tool-using agent vs. Agentless on SWE-bench Lite
 
-Status: **planned, not run.** No result in this repository answers the
-question below yet. The harness check and a local-model smoke test of the
-pipeline have been run (see "Before the study"). What is funded is a small
-first run on one Claude model ("Funded study", with its exact commands); the
-"Design" below is the full study, which is not funded.
+Status, as of 2026-10-08 — the two designs in this document have different
+states, and conflating them would overstate what exists:
+
+- **The funded study RAN** on 2026-10-05. 10 SWE-bench Lite instances, one
+  attempt per instance, `claude-haiku-4-5-20251001`, `--max-calls 60
+  --max-cost 0.75`, local grading backend. Agent 5/10 vs agentless 1/10,
+  4 discordant pairs all favouring the agent, $2.4892 over 588 calls. Exact
+  McNemar two-sided p = 0.125 — not significant, and the floor this design can
+  reach. Results, the 10 exclusions with their measured causes, and **its
+  deviations from this plan** are in
+  [`results/haiku-study/RESULTS.md`](results/haiku-study/RESULTS.md); that file
+  is the record of what was actually done, and where it departs from the design
+  below, it is correct and this document is the intention.
+- **The full design below is NOT run** and not funded: 50 instances, 3 seeds,
+  both arms budget-matched at N = 3, official per-instance Docker images, the
+  issue/gold-patch mismatch analysis, and the bootstrap over seeds as well as
+  instances. Nothing in this repository answers the question below *at that
+  design*.
+
+This document is therefore **not** executed. The harness check and a
+local-model smoke test were also run beforehand (see "Before the study").
+
+One item the plan specified and the pilot originally omitted is now computed:
+the bootstrap CI over instances (10,000 resamples) is in
+[`analyze_study.py`](analyze_study.py) — paired difference +0.400, 95%
+percentile CI [+0.100, +0.700]. The exact McNemar test still governs the
+significance question; see that script's docstring for why the interval cannot
+be read as establishing one.
 
 ## Question
 

@@ -45,6 +45,39 @@ against the baseline's 1, every discordant instance favoured the agent, and the
 agent never lost an instance the baseline won — a consistent direction on a
 sample too small for a significance claim.*
 
+**Bootstrap CI, computed 2026-10-08.** STUDY_PLAN asked for "a bootstrap CI
+over instances (10,000 resamples, instances resampled, seeds kept)" and it was
+never computed — no confidence interval of any kind appeared anywhere in this
+repository. It is now reproducible from the committed `main.jsonl`:
+
+```
+python -m bench.analyze_study          # 10,000 resamples, seed 0
+```
+
+| quantity | value |
+|---|---|
+| paired difference (agent − agentless) | **+0.400** |
+| 95% percentile CI, instances resampled | **[+0.100, +0.700]** |
+| resamples ≤ 0 | 0.54% |
+| exact McNemar two-sided p | 0.125 |
+
+The interval was identical on every seed tried (0, 1, 2, 7, 42, 2026); only the
+≤ 0 share moved, between 0.52% and 0.75%.
+
+**That interval excludes zero and the exact test does not reject, so read the
+exact test.** The two are not equally trustworthy here. A percentile bootstrap
+over 10 pairs is anti-conservative, the statistic is lattice-valued (resampling
+10 instances can only move the difference in steps of 0.1, which is why the
+bounds are flat across seeds), and the interval ignores the discreteness that
+makes 0.125 McNemar's floor. The bootstrap cannot manufacture significance that
+the exact paired test denies. It is reported because the plan specified it, and
+because a wide interval around +0.400 is the honest summary of n = 10 — not as
+a second opinion that upgrades the finding.
+
+`bench/analyze_study.py` also recomputes the headline counts, the 1/4/0/5
+contingency and the McNemar p from `main.jsonl`, so every number in this
+section can be re-derived rather than trusted.
+
 **Cost-effectiveness, which is the more interesting finding.** The agent cost
 **8.6×** the baseline ($2.254 vs $0.263) for 5× the resolutions — $0.45 per
 resolution against $0.26. Better outcomes, worse efficiency. The agent spent 1,756
